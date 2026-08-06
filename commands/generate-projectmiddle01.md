@@ -12,6 +12,12 @@ Goal: the user attaches one or more screenshots OR a PDF export of the Figma cre
 1. **Picking the wrong variant of the right module family.** Nearly every V3 module exists in 3–5 variants that differ *only* by background band and whether there's an inset rounded card. Get the background chain right first (Step 3), then the variant follows.
 2. **Leaving the example module's font sizes in place.** The example modules are a styling reference, not a spec. Their sizes are placeholders — you must retype them to the creative's measured sizes (Step 5).
 
+## Not for Via Highlights
+
+**Via Highlights sends are not built with this command.** Their layout is fixed, so `/new-project` builds the body inline when the user answers yes to its Step 3a question, working from `BoilerplateV2_ExampleModules/VIA_Highlights_072626_Snapshot.html`.
+
+If you land here on a Via Highlights project anyway — the file is a single standalone `VIA_Highlights_MMDDYY.html` with the navy Via header and footer inline, and no `ProjectMiddle01.htm` — **stop and follow the "Via Highlights build" section of `.claude/commands/new-project.md` instead** (steps V4–V5 cover the module inventory and the slot-by-slot swap). Do not apply Steps 3–5 below to it: the background-chain and variant logic doesn't apply, and Step 5's 1.5× line-height rule would overwrite Via's approved 34/44, 18/26, and 16/26 pairs.
+
 ## Step 1 — Get the input
 
 If the user hasn't already attached a file, ask them to paste **one** of:
