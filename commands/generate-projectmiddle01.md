@@ -7,10 +7,12 @@ argument-hint: [project-folder-path]
 
 Goal: the user attaches one or more screenshots OR a PDF export of the Figma creative, you **measure** it section-by-section, propose a sequence of modules from `BoilerplateV2_ExampleModules/`, the user confirms, and you stitch them in — with the creative's real background colors, card structure, and font sizes applied.
 
-**The two things this command gets wrong most often**, so check them explicitly every run:
+**The four things this command gets wrong most often**, so check them explicitly every run:
 
 1. **Picking the wrong variant of the right module family.** Nearly every V3 module exists in 3–5 variants that differ *only* by background band and whether there's an inset rounded card. Get the background chain right first (Step 3), then the variant follows.
 2. **Leaving the example module's font sizes in place.** The example modules are a styling reference, not a spec. Their sizes are placeholders — you must retype them to the creative's measured sizes (Step 5).
+3. **Stacking two modules and getting 60px of space between them.** Each module ships padding on both its top and its bottom because each is presented standalone. Adjacent modules must end up **30px apart on desktop / 20px on mobile** — zero the bottom padding on every module but the last (Step 3, applied in Step 7).
+4. **Leaving example-asset image URLs in the build.** Every `<img src>` becomes an FPO placeholder carrying its own dimensions — `https://fpoimg.com/<W>x<H>?text=<W>x<H>` (Step 7). A real-looking photo from another campaign reads as a finished build in review.
 
 ## Not for Via Highlights
 
@@ -131,7 +133,23 @@ Rules that follow from the band list:
 - **Copy the module's own gradient convention — don't extrapolate.** The Gmail iOS dark-mode rule (`background-color` paired with `background-image:linear-gradient(<c>,<c>)`) is applied in `Modules_V3_Styles.html` to the colors that actually get inverted: navy `#003087`, black, slate, and the `#5b6670` table caption. It is *not* applied to `sky-20` `#ccecf9` or to the white card. Match what the source snippet does; adding a gradient where the boilerplate doesn't use one is a silent deviation.
 - White copy on a dark background still needs the `gmail-blend-screen` / `gmail-blend-difference` wrappers.
 
-Then sanity-check the vertical rhythm: band top → card top is the section's top padding, card bottom → band bottom is its bottom padding. The modules use `padding: 30px 0` desktop / `padding-top-20 padding-btm-20` mobile; if the creative shows ~30px gaps, the stock padding is already right.
+Then sanity-check the vertical rhythm: band top → card top is the section's top padding, card bottom → band bottom is its bottom padding. The modules use `padding: 30px 0` desktop / `padding-top-20 padding-btm-20` mobile.
+
+### 30px between modules — never 60px
+
+**The gap between any two adjacent modules must be exactly 30px on desktop (20px on mobile).** Each example module ships padding on *both* its top and its bottom, because each one is presented standalone in `Modules_V3_Styles.html`. Stack two of them verbatim and the paddings add: 30 + 30 = **60px**, which is double the spacing standard and visibly wrong against the creative. Measure the creative and you will see ~30px card-bottom → next-card-top; that is the number to hit.
+
+Collapse it when you stitch (Step 7), not by editing the creative's measurements. The rule:
+
+- **Every module keeps its 30px top padding** (`padding-top-20` on mobile).
+- **Every module except the last one has its bottom padding zeroed** — `padding:30px 0 0 0`, and drop the `padding-btm-20` mobile class from that same `<td>`.
+- **The last module keeps its 30px bottom padding**, so the final card clears the blue footer.
+
+That yields 30px above the first card, 30px between every pair, and 30px below the last — top and bottom of the content area included.
+
+Watch for modules that split their padding across **two** `<tr>`s (`#icons-left-skinny` is the common one: a top `<td style="padding: 30px 0 0 0" class="padding-top-20">` for the heading half of the card and a separate bottom `<td style="padding:0 0 30px 0" class="padding-btm-20">` for the bullets half). The bottom padding lives on the second `<tr>` — that is the one to zero, not the first.
+
+If the creative genuinely shows something other than 30px between two sections, say so and use the measured value; but 60px is never the answer, and it is always a stitching artifact rather than a design decision.
 
 ## Step 4 — Map sections to modules, and pick the variant deliberately
 
@@ -269,7 +287,8 @@ Output a numbered plan. Each row must state the module **and the evidence for th
    • Row 2: "Affordable rates designed to meet your specific coverage needs." — 14px/21
    • Row 3: "Members save 10% on term life insurance from AAA." — 14px/21
    • Icons: 50x50 navy filled circle, white check — module ships 70x70, resize
-   • Image src: [keep example asset URL — needs real asset]
+   • Image src: FPO https://fpoimg.com/580x420?text=580x420 — needs real asset
+   • Spacing: bottom padding zeroed (not the last module) → 30px to section 3
 ```
 
 Then `AskUserQuestion`: **approve as-is**, **edit the sequence / copy**, or **swap a row**. Do not start writing until the user approves.
@@ -311,12 +330,31 @@ Then apply the approved spec slot-by-slot:
 
   Watch the ticket Comments too: reviewers often ask the requestor to add hero alt text. A comment requesting alt text is not the alt text — flag it as an open item.
 - **Widow control** — where the original used a trailing `&nbsp;` to prevent a one-word last line, do the same before the final word of the replacement copy. Nowhere else.
+- **Inter-module padding** — apply the 30px rule from Step 3: zero the bottom padding on every module except the last, and drop that `<td>`'s `padding-btm-20` mobile class. Do this as you append each module, then re-check the whole file top-to-bottom — a module inserted later can silently turn the previous last module back into a middle one.
 
 - **Link `href`** — apply the real tracking URLs from Step 2c verbatim, with literal `&` between params (never `&amp;`). Only leave an example `href` where the Campaign URLs table has no matching row.
 
-Leave this as a placeholder and list it in Step 8:
+### Every image `src` is an FPO placeholder
 
-- **Image `src`** — keep the `https://fpoimg.com/...` FPO URLs and `https://image.emails.goaaa.com/...` example asset URLs. Real hosted URLs come from the asset team, not the creative.
+**Replace every `src` in the stitched modules with an FPO placeholder carrying that image's dimensions** — never leave an `https://image.emails.goaaa.com/...` example asset URL in a real project. Those example URLs render as somebody else's finished artwork, which reads as a completed build in review and hides the fact that the asset team hasn't delivered yet. An FPO cannot be mistaken for the real thing.
+
+Format — the dimensions appear in both the path and the `text` label, so the placeholder is self-documenting on screen:
+
+```
+https://fpoimg.com/<W>x<H>?text=<W>x<H>
+```
+
+```html
+<img src="https://fpoimg.com/580x580?text=580x580" alt="Buy One Get One" width="580" height="580" …>
+```
+
+- `<W>x<H>` are the **measured** dimensions from Step 2a's IMAGES section (or the module's fixed dimensions where the creative confirms them). They must match the `width` / `height` attributes on the same tag.
+- This applies to **every** `<img>`: heroes, inline photos, icon bullets, spectrum bars, 2-up cards — all of them.
+- **Mobile-only rows keep `width="0" height="0"` on the tag**, but the FPO URL still carries the *mobile crop's* real dimensions, because that is what the asset team has to produce. If you only measured a desktop export you don't know the mobile crop size — use the desktop dimensions, and say in the Step 8 report that the mobile crop dimensions are unconfirmed pending the mobile Figma frame.
+- `alt` is unaffected — it still comes from the Campaign URLs table (or stays `alt=""`), never from the FPO text.
+- Leave the surrounding `<a>` wrapper, `class`, `style`, radius, and `img-w-*` classes exactly as the module ships them.
+
+Then list every FPO in the Step 8 report, grouped by module with its dimensions, so the asset request can be raised in one pass.
 
 Copy hygiene: convert straight quotes to curly (`'` `'` `"` `"`), use entities (`&nbsp;`, `&trade;`, `&reg;`, `&#8209;` for non-breaking hyphens) where the module already does — **in visible copy only, never inside an attribute value like `href` or `src`**. Body copy may contain entities and normal punctuation (unlike `@SubjectLine`/`@PreviewText`). Never invent copy the creative doesn't show — flag empty slots instead of filling them.
 
@@ -330,9 +368,10 @@ Print:
 - **Personalization** — any `@FirstNameIntro*` value you wrote into `ProjectAmpscript.amp`, showing how both the fallback and personalized branches read as full sentences.
 - **Weight/copy deltas applied** — the list from Step 2d and what the user confirmed for each.
 - **URLs wired** — each element → its `utm_content` value, so a mismatch is easy to spot; plus any Campaign URLs row with no matching element, or element with no row. Grep the file for `amp;` first: any hit inside an `href` is an escaping bug — fix it before reporting.
+- **Inter-module spacing** — confirm the gap between every pair of adjacent modules is 30px desktop / 20px mobile, and name the module whose bottom padding you kept (it should be the last one, and only the last one).
 - **Sections built by hand or as placeholder images** — what you chose and why, for anything with no module match.
 - **Copy filled in** — plus any slot left as placeholder because the creative didn't cover it.
-- **Still placeholder** — image `src`s (and any `href` with no Campaign URLs row), listed with their module.
+- **FPO images** — every `<img>` grouped by module with its `<W>x<H>`, so the asset request goes out in one pass. Flag any mobile-crop dimension you carried over from the desktop export because no mobile frame was supplied. Plus any `href` with no Campaign URLs row.
 - **Alt text** — each image's `alt` and the Campaign URLs row it came from, plus every image left at `alt=""` because it had no row, so the user can collect any missing wording in one pass. Call out any ticket Comment that asked for alt text.
 - Any `[ILLEGIBLE — confirm]` copy, and any measurement the script flagged (undefined mobile class, mobile > desktop).
 - Legal/disclaimer copy that belongs in `ProjectLegal.htm`.
