@@ -23,7 +23,7 @@ Run the parser and capture its JSON output:
 py .claude/scripts/parse_intake.py "<path-to-intake.doc>"
 ```
 
-The parser reads the `.doc` via Word COM (`pywin32`), pulls the intake fields out of the Jira "Description" body (one `Label: value` per line — Jira metadata and the Comments section are ignored), and emits the same JSON shape as before: `raw` (verbatim field values), `derived` (campaign name + MMDDYY + year), `ampscript_proposed` (best-guess variable values), and `extras` (figma link, additional legal, send date).
+The parser reads the `.doc` via Word COM (`pywin32`), pulls the intake fields out of the Jira "Description" body (one `Label: value` per line — Jira metadata and the Comments section are ignored), and emits the same JSON shape as before: `raw` (verbatim field values), `derived` (campaign name + MMDDYY + year, plus `is_ab_test` / `campaign_name_a` / `campaign_name_b`), `ampscript_proposed` (best-guess variable values), and `extras` (figma link, additional legal, send date).
 
 Note: the parser already strips an `Email N:` prefix from journey subject/preview copy, maps `Discounts & Rewards`-style LOB names by contains-match, and blanks placeholder disclaimers (`see figma`, `N/A`, …) so they aren't treated as real legal copy. A single Jira ticket is usually **one email of a multi-email journey** (the siblings are separate tickets) — build the one named in `Campaign Name A` and let the user run the command again per ticket.
 
@@ -41,8 +41,12 @@ Present a concise summary table of the proposed setup. Show **every value the us
 - **`@LOBunsubscribe`** (Default | Highlights | Visa Credit Card | Auto and Other Vehicle Insurance | Auto Repair | Cyber Newsletter | Emergency and safety | Home and Other Property Insurance | Identity Protection | Life Insurance | Discounts and Benefits | Membership Newsletter | New Offers and Innovations | Smart Home | Travel | eVia)
 - **`@SubjectLine`** — verify it has no straight quotes (`'` `"`), no HTML, no `&entities;`. If it does, suggest replacements (`'` `"` `"` `¹` `²` `³` `™`). Emojis are OK.
 - **`@PreviewText`** — same straight-quote/HTML rules. Entities and emojis are OK.
+- **A/B test** — `derived.is_ab_test` (from the intake's `A/B Test: Yes|No` field). When it's `true`, also show:
+  - **Campaign Name A / B** — `derived.campaign_name_a` and `derived.campaign_name_b`. The B name comes from the ticket's `Campaign Name B` field; when that field is blank the parser falls back to `<A>_B`, so **always have the user confirm the B name** — it becomes a filename and the SFMC Content Block name.
+  - **Subject / preview per variant** — `raw.subject_line_b` / `raw.preview_text_b` (same content rules as A). If B's subject or preview differs from A's, this is a subject-line test and Step 6 has to branch them.
+  - **`raw.ab_goal`** (A/B Test Goal & Description) — verbatim, so the user can confirm what actually differs between the variants.
 
-Use `AskUserQuestion` for items with enumerated valid values when in doubt. For free-text fields (subject / preview) just ask for confirmation or an edit.
+Use `AskUserQuestion` for items with enumerated valid values when in doubt. For free-text fields (subject / preview) just ask for confirmation or an edit. The A/B answer is a Yes/No `AskUserQuestion` pre-selected from `derived.is_ab_test` — the field is sometimes left at `No` on a ticket that does describe a split, so confirm rather than trust it.
 
 ## Step 3 — Ask which HTML Email Block variant
 
@@ -52,6 +56,8 @@ The scaffold has two:
 - **Standalone** (`EMC_SAMPLE_MMDDYY_NoPTSpacers_ViaHeatmaps_EngageDeployment_FilePassOffTo3rdPartyVendor_only.html`) — flattened CSS, no AMPscript wrapper, used for Via heatmaps, Dan's Engage deployments, or 3rd-party vendor file pass-offs.
 
 Ask the user which one. Default to **Standard** if unspecified. Delete the unused variant from the new project folder. (If the user asks to keep both, leave both.)
+
+If this is an A/B test, the variant picked here is the file that gets duplicated into an A copy and a B copy in [Step 5a](#step-5a--ab-test-two-html-email-blocks) — the choice is unchanged, there are just two of the chosen file.
 
 ### 3a. If Standalone — ask whether this is a Via Highlights send
 
@@ -98,6 +104,49 @@ The HTML Email Block file(s) must be renamed from `EMC_SAMPLE_MMDDYY*` to `<camp
 
 Use targeted `Rename-Item` calls (PowerShell). Do not blanket-rename anything — only files literally prefixed `EMC_SAMPLE_MMDDYY`.
 
+**If this is an A/B test, do Step 5a instead of the HTML rename** (the `.xls` rename is unchanged and still uses the A name).
+
+## Step 5a — A/B test: two HTML Email Blocks
+
+Only when the user confirmed **A/B test = Yes** in Step 2. Otherwise skip to Step 6.
+
+An A/B test ships **two HTML Email Blocks in one project folder**, both pointing at the same `@ProjectFolderID` — so they share one `ProjectAmpscript`, one `ProjectMiddle01`, and one `ProjectLegal`. What separates them is a single new variable, `@email_version`, that the developer branches on to toggle whatever the test changes.
+
+The project folder stays named after **Campaign Name A** (Step 4 is unchanged) — one folder, two files.
+
+### Produce the two files
+
+Copy the chosen variant from Step 3 twice, then delete the original:
+
+```powershell
+$proj = "E:\Lumenalta\AAA SFMC Files\<YEAR>\<campaign_name_a>"
+$src  = "$proj\EMC_SAMPLE_MMDDYY.html"   # or the *_NoPTSpacers_... standalone, per Step 3
+Copy-Item -LiteralPath $src "$proj\<campaign_name_a>.html"
+Copy-Item -LiteralPath $src "$proj\<campaign_name_b>.html"
+Remove-Item -LiteralPath $src -Force -Confirm:$false
+```
+
+Keep the chosen variant's filename suffix on both copies — a standalone A/B pair is `<campaign_name_a>_NoPTSpacers_..._only.html` / `<campaign_name_b>_NoPTSpacers_..._only.html`.
+
+### Add `@email_version` to each file
+
+In the opening `%%[ … ]%%` block, add **one line directly under `SET @ProjectFolderID`** — `'A'` in the A file, `'B'` in the B file. Nothing else in the file changes:
+
+```
+%%[/*
+---------------------------------------------------------------------------
+HTML Email Block
+--------------------------------------------------------------------------- */
+SET @BoilerplateFolderID = '399733'
+SET @ProjectFolderID = '403609'
+SET @email_version = 'A' /* A | B. A/B test variant, set per HTML Email Block. Branch on it in ProjectAmpscript / ProjectMiddle01 to toggle what differs between the variants. */
+]%%
+```
+
+Placement matters: it must sit **above** the `CONTENTBLOCKBYKEY(… '_ProjectAmpscript')` call, because every downstream content block is evaluated after this line and can therefore read `@email_version`. Putting it anywhere else silently gives the shared blocks an empty variable.
+
+`@email_version` is only ever `'A'` or `'B'` (or `'C'` / `'D'` if the ticket describes a 3- or 4-way split — then produce one file per letter, using the same rules). Never leave it empty in an A/B project, and never add it to a non-A/B project.
+
 ## Step 6 — Edit `ProjectAmpscript.amp`
 
 Open the new project's `ProjectAmpscript.amp` and update the variable values using `Edit` (find/replace on the `SET @X = '...'` lines). Variables to set:
@@ -113,6 +162,34 @@ Open the new project's `ProjectAmpscript.amp` and update the variable values usi
 - `@SegmentName` and `@SegmentGeneral` — only set these in the Journey/Triggered branch or the A3 Smart Home Campaign branch. For `AAA MWG` + `Campaign`, leave them alone — they are populated by `CmpgnDataSpecVars` from the Data Extension.
 
 **Leave `@ReviewRound = 'DEV'` as-is** — it's the test prefix and the user changes it manually per review round.
+
+### A/B test additions
+
+`ProjectAmpscript` is shared by both HTML Email Blocks, so anything that differs per variant has to branch on `@email_version`. Two edits, both inside this one file:
+
+1. **`@ABVersion`** — replace the literal with the variable:
+
+   ```
+   SET @ABVersion = @email_version
+   ```
+
+   Leave the scaffold's explanatory comment in place. `SubjectLineController` appends `_[Letter]` to the test subject line from `@ABVersion`; hard-coding `'A'` (or leaving it `''`) makes both variants' test subject lines identical, which is how a QA round loses track of which file it is reviewing. Ignore `ampscript_proposed.ABVersion` on an A/B project — it always proposes the `'A'` literal.
+
+2. **`@SubjectLine` / `@PreviewText`** — only when B's differ from A's (Step 2 flagged this). Wrap them:
+
+   ```
+   IF @email_version == 'B' THEN
+       SET @SubjectLine = '<subject line B>'
+       SET @PreviewText = '<preview text B>'
+   ELSE
+       SET @SubjectLine = '<subject line A>'
+       SET @PreviewText = '<preview text A>'
+   ENDIF
+   ```
+
+   Both branches keep the Step 2 content rules — no straight quotes, no HTML, no `&entities;` in a subject line. If B's subject and preview match A's, leave the plain `SET` lines alone; the test is a creative test and gets branched in `ProjectMiddle01.htm` later.
+
+Anything else the test changes (an image, a CTA label, a whole module) belongs in `ProjectMiddle01.htm` behind the same `IF @email_version == 'B'` conditional, authored later. Don't scaffold empty branches for it.
 
 Do **not** put URLs inside variable values (except `@UnsubscribeURL`). If the user provides a project-specific URL, leave it for `ProjectMiddle01.htm`.
 
@@ -153,9 +230,10 @@ Print a tight summary:
 
 - New project path
 - Files renamed
+- **A/B test** (only when Yes): the two HTML Email Block filenames and the `@email_version` value in each, that both point at the same `@ProjectFolderID` and share one `ProjectAmpscript` / `ProjectMiddle01` / `ProjectLegal`, whether `@SubjectLine` / `@PreviewText` were branched or left common, and what the ticket says actually differs between the variants (`raw.ab_goal`) so the developer knows what still needs branching in `ProjectMiddle01.htm`
 - Variables set in `ProjectAmpscript.amp` (just the changed ones)
 - `ProjectLegal.htm`: the legal copy placed, and which optional blocks were pruned vs. kept
-- Reminders: `ProjectMiddle01.htm` is the next file to edit; `@ProjectFolderID` in the HTML Email Block still holds the scaffold's ID and must be updated once the Content Builder folder exists; the data extension `.xls` may need tab cleanup (`/edit-data-extension`); the Figma link from the intake is in `extras.figma_link`.
+- Reminders: `ProjectMiddle01.htm` is the next file to edit; `@ProjectFolderID` in the HTML Email Block still holds the scaffold's ID and must be updated once the Content Builder folder exists (**in both files** on an A/B project); the data extension `.xls` may need tab cleanup (`/edit-data-extension`); the Figma link from the intake is in `extras.figma_link`.
 
 ---
 
@@ -200,6 +278,14 @@ Copy-Item "E:\Lumenalta\AAA SFMC Files\BoilerplateV2\BoilerplateV2_ExampleModule
 Then delete the files the single-file build never uses — **both** EMC_SAMPLE HTML variants plus `ProjectAmpscript.amp`, `ProjectMiddle01.htm`, `ProjectCSS.htm`, and `ProjectLegal.htm`. The Via build is one self-contained file: its AMPscript header, CSS, header, footer, and legal all live inside it, and those four content blocks would never be uploaded. List every deletion in the V6 report.
 
 **Never edit the snapshot in place.** Read from `BoilerplateV2_ExampleModules/`; write only inside the new project folder.
+
+### If the intake says A/B test
+
+Rare on Highlights, but the rule is the same as [Step 5a](#step-5a--ab-test-two-html-email-blocks): copy the snapshot **twice**, to `<campaign_name_a>.html` and `<campaign_name_b>.html`, in the one folder named after Campaign Name A.
+
+The difference is where the variable goes. This build has no `@ProjectFolderID` — its AMPscript header is the inline `%%[ … ]%%` block at the top of the file (snapshot lines 1–7) — so add `SET @email_version = 'A'` (resp. `'B'`) as the **first line of that block**, above `SET @ReviewRound`, and add `SET @ABVersion = @email_version` alongside it so `SubjectLineController` (called on line 8) labels each variant's test subject line with its letter.
+
+Because a Via build is one self-contained file per variant with no shared content blocks, whatever the test changes — subject line, an image, a card's copy — is edited **directly in each file**. Don't wrap it in an `IF @email_version` conditional; there is nothing shared for the conditional to serve.
 
 ## V3 — Set the AMPscript header and the inline preview text
 
@@ -299,7 +385,7 @@ Any `amp;` hit inside an `href` is the escaping bug — fix it. Total file size 
 
 ## V6 — Report
 
-- New project path, the base file (`<campaign_name>.html`, copied from the snapshot), and every scaffold file deleted.
+- New project path, the base file (`<campaign_name>.html`, copied from the snapshot — **both** files and their `@email_version` values if this is an A/B test), and every scaffold file deleted.
 - The module sequence top-to-bottom with the band chain, so a dropped or duplicated band is obvious.
 - AMPscript header values set — call out the added `SET @MessageType = 'Marketing'` explicitly.
 - Preview text placed, and confirmation the spacer run is untouched.
@@ -321,5 +407,7 @@ These apply to both paths.
 - Do not edit `GlobalModules/` or `BoilerplateV2_ExampleModules/` — including `VIA_Highlights_072626_Snapshot.html`, which is read-only reference.
 - Do not skip the confirmation step — the LOB→footer mapping and the EmailType (Triggered vs Journey) often need a human eye.
 - Do not invent variable values outside the enumerated lists in `ProjectAmpscript.amp`'s inline comments.
+- Do not create a second project folder for an A/B test. It is one folder, one `@ProjectFolderID`, two HTML Email Blocks — a second folder would fork `ProjectAmpscript` / `ProjectMiddle01` / `ProjectLegal` and the two variants would drift.
+- Do not add `@email_version` to a project that isn't an A/B test, and do not leave it empty in one that is.
 - Do not run the Via Highlights path off a guess. It is gated on the Step 3a question, and only on **Standalone**.
 - Do not restyle the Via reference build. Images, copy, URLs, alt text, and photo credits change; structure and type scale do not.

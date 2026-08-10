@@ -125,6 +125,9 @@ NON_LEGAL_VALUES = {
     "see creative", "see copy", "tbd",
 }
 
+# Values that mean "this field was left blank" on any free-text field.
+PLACEHOLDER_VALUES = {"", "n/a", "na", "none", "n / a", "tbd", "-", "--"}
+
 
 def norm_label(s: str) -> str:
     """Normalize a label for matching: lower-case, straight apostrophe."""
@@ -297,6 +300,27 @@ def clean_legal(text: str) -> str:
     return "" if text.strip().lower() in NON_LEGAL_VALUES else text.strip()
 
 
+def is_ab_test(ab_test: str) -> bool:
+    """True when the intake's 'A/B Test' field says yes.
+
+    Seen in the wild: 'Yes', 'yes', 'Yes - Subject Line', 'No', 'N/A', ''.
+    Anything that doesn't start with 'yes' (or a bare 'y') is a no."""
+    t = ab_test.strip().lower()
+    return t == "y" or t.startswith("yes")
+
+
+def derive_campaign_name_b(campaign_a: str, campaign_b: str, ab: bool) -> str:
+    """Name of the B variant. The intake's 'Campaign Name B' field wins;
+    fall back to '<A>_B' so the command has something to propose. Empty
+    when this isn't an A/B test."""
+    if not ab:
+        return ""
+    b = campaign_b.strip()
+    if b and b.lower() not in PLACEHOLDER_VALUES:
+        return b
+    return f"{campaign_a}_B" if campaign_a else ""
+
+
 CAMPAIGN_URL_HEADERS = {
     "url placement",
     "type of clickable asset",
@@ -375,6 +399,7 @@ def parse(path: Path) -> dict:
     mmddyy = derive_mmddyy(campaign, raw["send_date"])
     year = derive_year(mmddyy)
     lob = raw["lob_product"]
+    ab = is_ab_test(raw["ab_test"])
 
     return {
         "intake_file": str(path),
@@ -383,6 +408,11 @@ def parse(path: Path) -> dict:
             "campaign_name": campaign,
             "mmddyy": mmddyy,
             "year": year,
+            "is_ab_test": ab,
+            "campaign_name_a": campaign,
+            "campaign_name_b": derive_campaign_name_b(
+                campaign, raw["campaign_name_b"], ab
+            ),
         },
         "ampscript_proposed": {
             "BusinessUnit": map_business_unit(raw["deploy_system"]),
@@ -393,7 +423,7 @@ def parse(path: Path) -> dict:
             "LOBHeader": map_lob_header(lob),
             "LOBFooter": map_lob_footer(lob),
             "LOBunsubscribe": map_unsub_lob(raw["unsubscribe_lob"]),
-            "ABVersion": "" if raw["ab_test"].strip().lower() in ("no", "") else "A",
+            "ABVersion": "A" if ab else "",
             "SubjectLine": strip_email_prefix(raw["subject_line_a"]),
             "PreviewText": strip_email_prefix(raw["preview_text_a"]),
             "SegmentName": campaign,

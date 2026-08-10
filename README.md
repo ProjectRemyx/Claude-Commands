@@ -54,7 +54,7 @@ What it does:
 2. **Confirms every value with you** before writing anything: target folder, campaign / MMDDYY / year, `@BusinessUnit`, `@MessageType`, `@EmailType`, `@LOBHeader`, `@LOBFooter`, `@LOBunsubscribe`, `@SubjectLine`, `@PreviewText`.
 3. **Asks which HTML Email Block variant** — Standard (normal Content Block composition) or Standalone (flattened CSS, for Via heatmaps, Engage deployments, and 3rd-party vendor handoffs). Deletes the unused one.
 4. **Creates the project folder** at `E:\Lumenalta\AAA SFMC Files\<YEAR>\<campaign_name>\` by copying `EMC_SAMPLE_MMDDYY/`, then strips the scaffold's reference material out of `assets/` so only the DE `.xls` remains.
-5. **Renames** the HTML Email Block file(s) and the `.xls` from `EMC_SAMPLE_MMDDYY*` to the campaign name.
+5. **Renames** the HTML Email Block file(s) and the `.xls` from `EMC_SAMPLE_MMDDYY*` to the campaign name. **On an A/B test** (`A/B Test: Yes` on the ticket) it instead writes **two** HTML Email Blocks — one named after `Campaign Name A`, one after `Campaign Name B` — in the one project folder, each with a `SET @email_version = 'A'` / `'B'` line directly under `SET @ProjectFolderID`.
 6. **Pre-fills `ProjectAmpscript.amp`** with the confirmed values.
 7. **Fills in and prunes `ProjectLegal.htm`** — places the intake's additional legal below the `FtrRequired01` block, deletes the Lorem footnotes, and prunes the inapplicable conditional blocks (asking first, since re-adding means copying from the scaffold).
 
@@ -65,6 +65,7 @@ Notable guardrails:
 - Only ever deletes inside the **new** project's `assets/`, never the scaffold's.
 - Leaves `@ReviewRound = 'DEV'` alone; you change that manually per review round.
 - A single Jira ticket is usually **one email of a multi-email journey** — the siblings are separate tickets, so run the command again per ticket.
+- An A/B test is **one folder, one `@ProjectFolderID`, two HTML Email Blocks** — never two project folders. Both files pull the same `ProjectAmpscript` / `ProjectMiddle01` / `ProjectLegal`, and `@email_version` (set above every `CONTENTBLOCKBYKEY` call, so all of them can read it) is what those shared blocks branch on to toggle the difference. `@ABVersion` is wired to it so each variant's test subject line carries its own letter.
 
 ## `/generate-projectmiddle01 [project-folder-path]`
 
@@ -124,12 +125,14 @@ Reads the Jira `.doc` export via Word COM and emits JSON on stdout:
 | Key | Contents |
 |---|---|
 | `raw` | verbatim intake field values |
-| `derived` | campaign name, MMDDYY, year |
+| `derived` | campaign name, MMDDYY, year, `is_ab_test`, `campaign_name_a`, `campaign_name_b` |
 | `ampscript_proposed` | best-guess `ProjectAmpscript.amp` variable values |
 | `extras` | Figma link, additional legal, send date |
 | `campaign_urls` | Campaign URLs table as `{placement, section, type, cell_instructions, url}` rows |
 
 `section` comes from a `(section N)` prefix and matches the section order in the creative, so a URL maps straight to a module. `cell_instructions` does double duty: on an `Image` row it's the alt text; on a `CTA Button` / `Text Link` row it's the visible label.
+
+`is_ab_test` is true when the ticket's `A/B Test` field starts with `Yes`; it drives `/new-project`'s two-HTML-Email-Block fork. `campaign_name_b` comes from the ticket's `Campaign Name B` field and falls back to `<A>_B` when that's blank or `N/A`, so the command confirms it with the user before it becomes a filename.
 
 Requires `pywin32` + Microsoft Word.
 
