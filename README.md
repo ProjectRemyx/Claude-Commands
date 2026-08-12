@@ -7,6 +7,7 @@ These are custom [Claude Code](https://claude.com/claude-code) slash commands th
 ## Contents
 
 ```
+CLAUDE.md                        project rules + hard constraints Claude Code loads every session
 commands/
   new-project.md                 -> /new-project
   generate-projectmiddle01.md    -> /generate-projectmiddle01
@@ -19,16 +20,33 @@ scripts/
 
 ## Installing
 
-The commands expect to run from inside `BoilerplateV2`, and they call the helper scripts by the relative path `.claude/scripts/<script>.py`. Copy both folders from this repo into `BoilerplateV2\.claude\`:
+The commands expect to run from inside `BoilerplateV2`, and they call the helper scripts by the relative path `.claude/scripts/<script>.py`. Copy the two folders **and `CLAUDE.md`** from this repo into `BoilerplateV2`:
 
 ```
+BoilerplateV2\CLAUDE.md           <- CLAUDE.md from this repo (project root, next to .claude\)
 BoilerplateV2\.claude\commands\   <- commands/ from this repo
 BoilerplateV2\.claude\scripts\    <- scripts/ from this repo
 ```
 
+**`CLAUDE.md` is required, not optional.** Claude Code auto-loads it at the start of every session in that folder, and it carries the hard constraints Claude has to obey — the 15 kB / 102 kB CSS budgets, the 1.5× `line-height` rule and its exceptions, the `ProjectLegal.htm` pruning rules, the unclosed final `<p>`, the Gmail iOS dark-mode gradient/blend pairs, the MSO button hacks, the table markup rules, and the "never HTML-escape a URL" rule. Without it Claude will happily produce markup that looks fine locally and breaks in Gmail or Outlook. It belongs at the **project root** (`BoilerplateV2\CLAUDE.md`), alongside the `.claude\` folder — not inside `.claude\`, which is only read for commands, scripts, and settings.
+
 `.claude\settings.local.json` is machine-specific and is not part of this repo — leave your existing one in place.
 
-Restart Claude Code (or start it in `BoilerplateV2`) and the three slash commands will be available. Pull this repo when you want the latest versions.
+Restart Claude Code (or start it in `BoilerplateV2`) and the three slash commands will be available. Pull this repo when you want the latest versions — including `CLAUDE.md`, which changes as constraints are discovered.
+
+## Changes go through the repo, not your local copy
+
+Treat your installed `CLAUDE.md`, `commands/`, and `scripts/` as **read-only working copies**. Do not edit them locally, even for a quick fix — a local edit means your Claude behaves differently from everyone else's, the next `git pull` silently overwrites it, and the fix never reaches the rest of the team.
+
+If you spot anything worth changing — a bug, a wrong constraint, a missing step, a prompt that keeps needing the same manual correction, or just a nice-to-have — **flag it to Jing (jing.cheng@lumenalta.com)** and it gets added to the master version here. Worth flagging:
+
+- A command that misreads an intake field, skips a step, or asks the wrong question.
+- A constraint in `CLAUDE.md` that's out of date, missing, or that you had to work around on a real send.
+- A helper script that errors on a real file, or a new Word/Excel/Figma export quirk it doesn't handle.
+- New GlobalModule dated versions, new `@LOBHeader` / `@LOBFooter` values, or Data Spec changes the commands should know about.
+- Anything you found yourself explaining to Claude by hand more than once — that's a documentation gap, and it belongs in `CLAUDE.md`.
+
+Include what you were doing, what you expected, and what happened (a paste of the relevant Claude output helps). If you need the change urgently, edit locally to unblock yourself, but flag it the same day and revert to the repo version once it's merged.
 
 ## Typical workflow
 
