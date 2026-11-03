@@ -309,6 +309,20 @@ def is_ab_test(ab_test: str) -> bool:
     return t == "y" or t.startswith("yes")
 
 
+# A Members in Force campaign pulls from the MIF data extension, which does not
+# follow the AAA MWG Email Campaign Data Spec. Any mention anywhere in the
+# ticket (fields, free text, or Comments) flips @DataSpec to 'MIF'.
+MIF_PATTERN = re.compile(
+    r"members?[\s-]+in[\s-]+force|(?<![a-z0-9])mif(?![a-z0-9])", re.I
+)
+
+
+def detect_data_spec(lines: list) -> tuple:
+    """Return ('MIF' | 'Engage', [lines that mention Members in Force])."""
+    hits = [ln for ln in lines if MIF_PATTERN.search(ln)]
+    return ("MIF" if hits else "Engage"), hits
+
+
 def derive_campaign_name_b(campaign_a: str, campaign_b: str, ab: bool) -> str:
     """Name of the B variant. The intake's 'Campaign Name B' field wins;
     fall back to '<A>_B' so the command has something to propose. Empty
@@ -400,6 +414,7 @@ def parse(path: Path) -> dict:
     year = derive_year(mmddyy)
     lob = raw["lob_product"]
     ab = is_ab_test(raw["ab_test"])
+    data_spec, data_spec_hits = detect_data_spec(lines)
 
     return {
         "intake_file": str(path),
@@ -420,6 +435,7 @@ def parse(path: Path) -> dict:
                 raw["objective_purpose"], raw["execution_type"]
             ),
             "EmailType": map_email_type(raw["execution_type"]),
+            "DataSpec": data_spec,
             "LOBHeader": map_lob_header(lob),
             "LOBFooter": map_lob_footer(lob),
             "LOBunsubscribe": map_unsub_lob(raw["unsubscribe_lob"]),
@@ -435,6 +451,7 @@ def parse(path: Path) -> dict:
             "additional_legal": clean_legal(raw["additional_legal"]),
             "additional_info": raw["additional_info"],
             "send_date": raw["send_date"],
+            "data_spec_evidence": data_spec_hits,
         },
         "campaign_urls": parse_campaign_urls(lines),
     }

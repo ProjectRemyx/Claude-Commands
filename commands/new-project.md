@@ -36,8 +36,10 @@ Present a concise summary table of the proposed setup. Show **every value the us
 - **`@BusinessUnit`** (AAA MWG | A3 Smart Home)
 - **`@MessageType`** (Marketing | Transactional) — this is a best-guess; always have the user confirm.
 - **`@EmailType`** (Campaign | Journey | Triggered) — confirm carefully; "Journeys - Omnichannel, Triggered" in the intake usually means `Triggered`.
+- **`@DataSpec`** (Engage | MIF) — only matters for `AAA MWG` + `Campaign`. Chosen automatically, no question asked: `ampscript_proposed.DataSpec` is `MIF` when the ticket mentions **Members in Force** or **MiF** anywhere (fields, free text, or Comments), otherwise `Engage`. Show the value, and when it's `MIF` quote `extras.data_spec_evidence` (the ticket lines that triggered it) so a false hit is easy to spot. Change it only if the user overrides it.
+- **`@SegmentName` / `@SegmentGeneral`** — filled in automatically from `ampscript_proposed`: the campaign name, and the campaign name minus its trailing `_MMDDYY`. Show both values; no question needed. On an A/B test they come from **Campaign Name A** — `@SegmentName` is not variant-specific (`@ABVersion` appends the letter), so if the A name ends in a variant letter (`…_A_MMDDYY`), suggest dropping it.
 - **`@LOBHeader`** (must be one of: Auto Buying | Auto Glass | Auto Repair | Credit Card | Discounts | Insurance | Membership | AAA Smart Home Security | AAA Smart Business Security | Travel | No LOB Header)
-- **`@LOBFooter`** (AAA.com | A3SmartHome.com | AAA.com/AutoBuying | AAA.com/AutoGlass | AAA.com/AutoRepair | AAA.com/Battery | AAA.com/DMV | AAA.com/Gift | AAA.com/IDTheft | AAA.com/Insurance | AAA.com/Life | AAA.com/Membership | AAA.com/MyMembership | AAA.com/MobileGlass | AAA.com/MVD | AAA.com/Renew | AAA.com/RenewToday | AAA.com/Repair | AAA.com/Smart | AAA.com/SmartBusiness | AAA.com/Travel | AAA.com/UpdateCard | Contact us at 1-877-363-6269 | Discounts) — the parser guesses based on LOB/Product but the intake doesn't always pin this down; ask.
+- **`@LOBFooter`** (AAA.com | A3SmartHome.com | AAA.com/AutoBuying | AAA.com/AutoGlass | AAA.com/AutoRepair | AAA.com/Battery | AAA.com/DMV | AAA.com/Gift | AAA.com/IDTheft | AAA.com/Insurance | AAA.com/Life | AAA.com/Membership | AAA.com/MyMembership | AAA.com/MobileGlass | AAA.com/MVD | AAA.com/Renew | AAA.com/RenewToday | AAA.com/Repair | AAA.com/Smart | AAA.com/SmartBusiness | AAA.com/Travel | AAA.com/UpdateCard | Contact us at 1-877-363-6269 | Discounts | AAA.com/CreditCards) — the parser guesses based on LOB/Product but the intake doesn't always pin this down; ask.
 - **`@LOBunsubscribe`** (Default | Highlights | Visa Credit Card | Auto and Other Vehicle Insurance | Auto Repair | Cyber Newsletter | Emergency and safety | Home and Other Property Insurance | Identity Protection | Life Insurance | Discounts and Benefits | Membership Newsletter | New Offers and Innovations | Smart Home | Travel | eVia)
 - **`@SubjectLine`** — verify it has no straight quotes (`'` `"`), no HTML, no `&entities;`. If it does, suggest replacements (`'` `"` `"` `¹` `²` `³` `™`). Emojis are OK.
 - **`@PreviewText`** — same straight-quote/HTML rules. Entities and emojis are OK.
@@ -154,12 +156,25 @@ Open the new project's `ProjectAmpscript.amp` and update the variable values usi
 - `@BusinessUnit`
 - `@MessageType`
 - `@EmailType`
+- `@DataSpec` — `'Engage'` or `'MIF'` per Step 2. Leave the line in place even when `@EmailType` isn't `Campaign`; it's only read inside the AAA MWG Campaign branch.
 - `@LOBHeader`
 - `@LOBFooter` (only inside the `IF @IncludeLOBfooter == 'Y'` block)
 - `@LOBunsubscribe` (only inside the `IF @BusinessUnit == 'AAA MWG'` branch)
 - `@SubjectLine`
 - `@PreviewText`
-- `@SegmentName` and `@SegmentGeneral` — only set these in the Journey/Triggered branch or the A3 Smart Home Campaign branch. For `AAA MWG` + `Campaign`, leave them alone — they are populated by `CmpgnDataSpecVars` from the Data Extension.
+- `@SegmentName` and `@SegmentGeneral` — **always set by hand, in every case, including single-send `AAA MWG` campaigns.** As of `CmpgnDataSpecVars_102826` the data spec no longer reads Segment Name / Segment General from the Data Extension, so the `SET` lines in the project are the only source. Replace the `'EMC_SAMPLE_MMDDYY'` / `'EMC_SAMPLE'` placeholders in the **branch that will actually run**:
+
+  | `@EmailType` + `@BusinessUnit` | Branch to edit in the Data mapping section |
+  |---|---|
+  | `Campaign` + `AAA MWG` | the first `IF @BusinessUnit == 'AAA MWG'` block, above the `IF @DataSpec` conditional |
+  | `Campaign` + `A3 Smart Home` | the `ELSEIF @BusinessUnit == 'A3 Smart Home'` block |
+  | `Journey` / `Triggered` | the outer `ELSE` block |
+
+  Values: `@SegmentName` = `ampscript_proposed.SegmentName` (the campaign name), `@SegmentGeneral` = `ampscript_proposed.SegmentGeneral` (the campaign name without its `_MMDDYY`). Leave the placeholders in the branches that don't run. `/qa-email` flags a live branch still holding `EMC_SAMPLE…`.
+
+- **Leave the `IF @DataSpec` block's contents alone.** The `Engage` branch calls `_CmpgnDataSpecVars_102826` and the `MIF` branch maps `@FirstName` directly; never swap the Engage call back to `_010725` / `_081126` — those versions re-read Segment Name / Segment General from the DE and would overwrite the manual values.
+
+**Standalone variant** (Step 3 = Standalone, not Via Highlights): the file has its own inline `SET @SegmentName = ''` / `SET @SegmentGeneral = ''` lines near the top. Fill those with the same two values — the standalone file never loads `ProjectAmpscript`, so leaving them empty blanks the test subject line's segment and the Inbox Monster tagging.
 
 **Leave `@ReviewRound = 'DEV'` as-is** — it's the test prefix and the user changes it manually per review round.
 
@@ -231,7 +246,7 @@ Print a tight summary:
 - New project path
 - Files renamed
 - **A/B test** (only when Yes): the two HTML Email Block filenames and the `@email_version` value in each, that both point at the same `@ProjectFolderID` and share one `ProjectAmpscript` / `ProjectMiddle01` / `ProjectLegal`, whether `@SubjectLine` / `@PreviewText` were branched or left common, and what the ticket says actually differs between the variants (`raw.ab_goal`) so the developer knows what still needs branching in `ProjectMiddle01.htm`
-- Variables set in `ProjectAmpscript.amp` (just the changed ones)
+- Variables set in `ProjectAmpscript.amp` (just the changed ones) — always include `@DataSpec` (and, when `MIF`, the ticket line that triggered it) and the `@SegmentName` / `@SegmentGeneral` values plus which branch they were written into
 - `ProjectLegal.htm`: the legal copy placed, and which optional blocks were pruned vs. kept
 - Reminders: `ProjectMiddle01.htm` is the next file to edit; `@ProjectFolderID` in the HTML Email Block still holds the scaffold's ID and must be updated once the Content Builder folder exists (**in both files** on an A/B project); the data extension `.xls` may need tab cleanup (`/edit-data-extension`); the Figma link from the intake is in `extras.figma_link`.
 
@@ -407,6 +422,7 @@ These apply to both paths.
 - Do not edit `GlobalModules/` or `BoilerplateV2_ExampleModules/` — including `VIA_Highlights_072626_Snapshot.html`, which is read-only reference.
 - Do not skip the confirmation step — the LOB→footer mapping and the EmailType (Triggered vs Journey) often need a human eye.
 - Do not invent variable values outside the enumerated lists in `ProjectAmpscript.amp`'s inline comments.
+- Do not leave `@SegmentName` / `@SegmentGeneral` as the `EMC_SAMPLE…` placeholders (or empty, in a standalone file) in the branch that runs — no data spec fills them anymore.
 - Do not create a second project folder for an A/B test. It is one folder, one `@ProjectFolderID`, two HTML Email Blocks — a second folder would fork `ProjectAmpscript` / `ProjectMiddle01` / `ProjectLegal` and the two variants would drift.
 - Do not add `@email_version` to a project that isn't an A/B test, and do not leave it empty in one that is.
 - Do not run the Via Highlights path off a guess. It is gated on the Step 3a question, and only on **Standalone**.

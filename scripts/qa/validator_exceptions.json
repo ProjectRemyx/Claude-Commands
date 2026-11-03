@@ -1,0 +1,63 @@
+{
+  "_readme": "Nu HTML Checker tuning. 'patterns': ERRORS that are expected in email HTML (reported as known exceptions, not flagged). 'important_warnings': the only WARNINGS that are surfaced (as WARN, never FLAG); every other warning is ignored. Patterns are regexes on the validator message.",
+  "patterns": [
+    {
+      "pattern": "^CSS: “mso-",
+      "why": "Outlook mso-* CSS properties"
+    },
+    {
+      "pattern": "^CSS: “-(webkit|moz|ms)-",
+      "why": "Vendor-prefixed CSS properties"
+    },
+    {
+      "pattern": "^CSS: .*(text-size-adjust|x-apple-data-detectors|data-ogs)",
+      "why": "iOS/Outlook.com client-targeting CSS"
+    },
+    {
+      "pattern": "^CSS: “(color-scheme|supported-color-schemes)”",
+      "why": "Dark-mode color-scheme declarations"
+    },
+    {
+      "pattern": "The “(bgcolor|align|valign|cellpadding|cellspacing|border|background|bordercolor)” attribute on the “\\w+” element is obsolete",
+      "why": "Presentational table attributes required by Outlook"
+    },
+    {
+      "pattern": "The “(center|font)” element is obsolete",
+      "why": "Obsolete elements kept for Outlook"
+    },
+    {
+      "pattern": "Attribute “(xmlns:v|xmlns:o|xmlns:w|x-apple-data-detectors)”",
+      "why": "VML/Office namespaces and Apple data detectors"
+    },
+    {
+      "pattern": "Element “[ovw]:\\w+”",
+      "why": "VML / Office elements (bulletproof buttons, backgrounds)"
+    },
+    {
+      "pattern": "Bad value “AMPSCRIPT”",
+      "why": "AmpScript placeholder (stripped before validation)"
+    }
+  ],
+  "important_warnings": [
+    {
+      "pattern": "character encoding was not declared|encoding .* declared",
+      "why": "No charset — special characters/emoji can garble"
+    },
+    {
+      "pattern": "Consider adding a “lang” attribute",
+      "why": "Missing lang — screen readers pick the wrong voice"
+    },
+    {
+      "pattern": "Document uses the Unicode Private Use Area",
+      "why": "Private-use characters render as boxes"
+    },
+    {
+      "pattern": "“tel:” URL|“mailto:” URL",
+      "why": "Malformed tel/mailto link"
+    },
+    {
+      "pattern": "Text run is not in Unicode Normalization Form C",
+      "why": "Odd characters copied from Word/Jira"
+    }
+  ]
+}

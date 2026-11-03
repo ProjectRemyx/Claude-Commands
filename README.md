@@ -2,7 +2,7 @@
 
 This repository holds all Claude Commands that the Lumenalta team for AAA MWG can reference and pull for updates.
 
-These are custom [Claude Code](https://claude.com/claude-code) slash commands that automate the deterministic parts of building an SFMC email for the **AAA Mountain West Group (MWG)** and **A3 Smart Home** business units — bootstrapping a project from a Jira intake ticket, translating a Figma creative into `ProjectMiddle01.htm`, and cleaning up the Data Extension workbook.
+These are custom [Claude Code](https://claude.com/claude-code) slash commands that automate the deterministic parts of building an SFMC email for the **AAA Mountain West Group (MWG)** and **A3 Smart Home** business units — bootstrapping a project from a Jira intake ticket, translating a Figma creative into `ProjectMiddle01.htm`, cleaning up the Data Extension workbook, and running pre-R1 QA on the finished build.
 
 ## Contents
 
@@ -12,27 +12,37 @@ commands/
   new-project.md                 -> /new-project
   generate-projectmiddle01.md    -> /generate-projectmiddle01
   edit-data-extension.md         -> /edit-data-extension
+  qa-email.md                    -> /qa-email
 scripts/
   parse_intake.py                Jira .doc intake -> JSON
   parse_creative_pdf.py          Figma PDF export -> measured type + background metrics
   de_tabs.py                     Data Extension .xls tab prune / dedupe / rename
+  qa/
+    email_qa.py                  /qa-email deterministic checks (links, images, copy, legal, AmpScript, Data Spec, size, validation)
+    report_pdf.py                QA report Markdown -> styled PDF (headless Edge/Chrome)
+    fill_checklist.py            pre-fills the R1 QA Checklist .xlsx
+    render.py                    optional Playwright renders
+    validator_exceptions.json    known-OK Nu HTML Checker errors for email markup
+templates/
+  R1 QA Checklist.xlsx           checklist template /qa-email copies and fills (never modified)
 ```
 
 ## Installing
 
-The commands expect to run from inside `BoilerplateV2`, and they call the helper scripts by the relative path `.claude/scripts/<script>.py`. Copy the two folders **and `CLAUDE.md`** from this repo into `BoilerplateV2`:
+The commands expect to run from inside `BoilerplateV2`, and they call the helper scripts by the relative path `.claude/scripts/<script>.py`. Copy the three folders **and `CLAUDE.md`** from this repo into `BoilerplateV2`:
 
 ```
 BoilerplateV2\CLAUDE.md           <- CLAUDE.md from this repo (project root, next to .claude\)
 BoilerplateV2\.claude\commands\   <- commands/ from this repo
-BoilerplateV2\.claude\scripts\    <- scripts/ from this repo
+BoilerplateV2\.claude\scripts\    <- scripts/ from this repo (including scripts/qa/)
+BoilerplateV2\.claude\templates\  <- templates/ from this repo
 ```
 
 **`CLAUDE.md` is required, not optional.** Claude Code auto-loads it at the start of every session in that folder, and it carries the hard constraints Claude has to obey — the 15 kB / 102 kB CSS budgets, the 1.5× `line-height` rule and its exceptions, the `ProjectLegal.htm` pruning rules, the unclosed final `<p>`, the Gmail iOS dark-mode gradient/blend pairs, the MSO button hacks, the table markup rules, and the "never HTML-escape a URL" rule. Without it Claude will happily produce markup that looks fine locally and breaks in Gmail or Outlook. It belongs at the **project root** (`BoilerplateV2\CLAUDE.md`), alongside the `.claude\` folder — not inside `.claude\`, which is only read for commands, scripts, and settings.
 
 `.claude\settings.local.json` is machine-specific and is not part of this repo — leave your existing one in place.
 
-Restart Claude Code (or start it in `BoilerplateV2`) and the three slash commands will be available. Pull this repo when you want the latest versions — including `CLAUDE.md`, which changes as constraints are discovered.
+Restart Claude Code (or start it in `BoilerplateV2`) and the four slash commands will be available. Pull this repo when you want the latest versions — including `CLAUDE.md`, which changes as constraints are discovered.
 
 ## Changes go through the repo, not your local copy
 
@@ -54,9 +64,10 @@ Include what you were doing, what you expected, and what happened (a paste of th
 1. /new-project <intake.doc>          scaffold the project folder + ProjectAmpscript + ProjectLegal
 2. /generate-projectmiddle01          measure the creative, stitch and spec ProjectMiddle01.htm
 3. /edit-data-extension               prune DE tabs, dedupe sample sets, set Segment Name/General
+4. /qa-email                          pre-R1 QA: qa/qa-report.pdf + pre-filled R1 QA Checklist
 ```
 
-Every command stops and asks for confirmation before it writes files. The LOB-to-footer mapping, `@EmailType` (Triggered vs. Journey), module variant choice, and the DE keep-list all need a human eye — none of them are reliably derivable from the intake alone.
+Every command that writes project files stops and asks for confirmation first (`/qa-email` is read-only — it only writes into `qa/`). The LOB-to-footer mapping, `@EmailType` (Triggered vs. Journey), module variant choice, and the DE keep-list all need a human eye — none of them are reliably derivable from the intake alone.
 
 ---
 
@@ -69,11 +80,11 @@ The intake arrives as a **Jira ticket export in Microsoft Word `.doc` format** (
 What it does:
 
 1. **Parses the intake** via `parse_intake.py` — pulls the `Label: value` fields out of the ticket Description, ignoring Jira metadata and Comments.
-2. **Confirms every value with you** before writing anything: target folder, campaign / MMDDYY / year, `@BusinessUnit`, `@MessageType`, `@EmailType`, `@LOBHeader`, `@LOBFooter`, `@LOBunsubscribe`, `@SubjectLine`, `@PreviewText`.
+2. **Confirms every value with you** before writing anything: target folder, campaign / MMDDYY / year, `@BusinessUnit`, `@MessageType`, `@EmailType`, `@DataSpec`, `@LOBHeader`, `@LOBFooter`, `@LOBunsubscribe`, `@SubjectLine`, `@PreviewText`, `@SegmentName`, `@SegmentGeneral`. `@DataSpec` and the two Segment values are filled automatically — shown, not asked.
 3. **Asks which HTML Email Block variant** — Standard (normal Content Block composition) or Standalone (flattened CSS, for Via heatmaps, Engage deployments, and 3rd-party vendor handoffs). Deletes the unused one.
 4. **Creates the project folder** at `E:\Lumenalta\AAA SFMC Files\<YEAR>\<campaign_name>\` by copying `EMC_SAMPLE_MMDDYY/`, then strips the scaffold's reference material out of `assets/` so only the DE `.xls` remains.
 5. **Renames** the HTML Email Block file(s) and the `.xls` from `EMC_SAMPLE_MMDDYY*` to the campaign name. **On an A/B test** (`A/B Test: Yes` on the ticket) it instead writes **two** HTML Email Blocks — one named after `Campaign Name A`, one after `Campaign Name B` — in the one project folder, each with a `SET @email_version = 'A'` / `'B'` line directly under `SET @ProjectFolderID`.
-6. **Pre-fills `ProjectAmpscript.amp`** with the confirmed values.
+6. **Pre-fills `ProjectAmpscript.amp`** with the confirmed values — including `@SegmentName` / `@SegmentGeneral` in whichever Data-mapping branch will run (single-send AAA MWG campaigns included), and in the Standalone file's inline header when that variant is picked.
 7. **Fills in and prunes `ProjectLegal.htm`** — places the intake's additional legal below the `FtrRequired01` block, deletes the Lorem footnotes, and prunes the inapplicable conditional blocks (asking first, since re-adding means copying from the scaffold).
 
 Notable guardrails:
@@ -81,6 +92,8 @@ Notable guardrails:
 - `<YEAR>` comes from the trailing `_MMDDYY` in the campaign name, **not** today's date.
 - If the target folder already exists, it stops and asks — you may be partway through that project.
 - Only ever deletes inside the **new** project's `assets/`, never the scaffold's.
+- **`@SegmentName` / `@SegmentGeneral` are always set by hand now.** `CmpgnDataSpecVars_102826` no longer reads them from the Data Extension, so the command writes the campaign name (and the campaign name minus `_MMDDYY`) into the live branch. Leaving an `EMC_SAMPLE…` placeholder there ships the wrong segment to the test subject line and Inbox Monster.
+- **`@DataSpec` is automatic**: `MIF` when the ticket mentions Members in Force / MiF anywhere (the matching lines are shown so a false hit is easy to catch), otherwise `Engage`. It only affects AAA MWG single-send campaigns — `Engage` loads `_CmpgnDataSpecVars_102826`, `MIF` maps `@FirstName` directly.
 - Leaves `@ReviewRound = 'DEV'` alone; you change that manually per review round.
 - A single Jira ticket is usually **one email of a multi-email journey** — the siblings are separate tickets, so run the command again per ticket.
 - An A/B test is **one folder, one `@ProjectFolderID`, two HTML Email Blocks** — never two project folders. Both files pull the same `ProjectAmpscript` / `ProjectMiddle01` / `ProjectLegal`, and `@email_version` (set above every `CONTENTBLOCKBYKEY` call, so all of them can read it) is what those shared blocks branch on to toggle the difference. `@ABVersion` is wired to it so each variant's test subject line carries its own letter.
@@ -126,11 +139,27 @@ Notable guardrails:
 - Only touches Segment Name (col A) and Segment General (col B); test data, seed emails, and office data are yours to fill in.
 - Never converts to `.xlsx` — SFMC's DE upload expects `.xls`.
 
+## `/qa-email [project-folder] [--r1] [--offline] [--no-validate]`
+
+Pre-R1 QA of a finished build. **Read-only** — it never edits the build; fixes go in the report for the developer to apply. Drop these in the project folder first (only the HTML is required; everything else upgrades checks from MANUAL):
+
+- the Jira export (`.doc`), the Figma PDF, and in `qa/`: the Inbox Monster **Export Previews** zip, the Inbox Monster **Download the HTML Content** file, an optional test-send `.eml`, and optional SFMC screenshots (`qa/screens/sfmc-*.png`).
+
+What it does:
+
+1. **Inventories inputs** and says which checks drop to MANUAL because something is missing.
+2. **Builds `qa/expected.json`** from the Jira export — campaign name, subject, preheader, send date, A/B, business unit, Data Spec, UTMs, the URL table, required legal.
+3. **Runs `email_qa.py check`** — links and UTMs (body only; header/footer must carry none), redirects, images and alt text, copy vs. the Figma PDF, legal, AmpScript syntax, **Data Spec & segment names**, tracking pixel / impression regions, fonts, dark mode, responsive swaps, emoji, size and Gmail clipping, and Nu HTML Checker validation.
+4. **Judgment pass** over the Figma PDF and Inbox Monster screenshots — copy-diff triage, 1:1 visual, alt-text rules, personalization, legal, rendering (body modules only for dark mode).
+5. **Writes `qa/qa-report.pdf`** and a pre-filled copy of the R1 QA Checklist (`--r1` writes the R1 column instead of Dev).
+
+The **Data Spec & segment names** check reads `ProjectAmpscript.amp` beside the build (or the inline header on a Standalone / Via build), works out which `@EmailType` / `@BusinessUnit` branch actually runs, and FLAGs: a live `@SegmentName` / `@SegmentGeneral` that's empty or still `EMC_SAMPLE…`; a `@DataSpec` that isn't `Engage` / `MIF` on an AAA MWG campaign, or that disagrees with the ticket; and an Engage branch still calling `_CmpgnDataSpecVars_010725` / `_081126` (those re-read Segment Name / General from the DE and overwrite the manual values). A segment name that's set but doesn't match the Jira campaign name is a WARN.
+
 ---
 
 ## Helper scripts
 
-All three are called by the commands, but they run standalone too.
+All of them are called by the commands, but they run standalone too.
 
 ### `parse_intake.py`
 
@@ -144,8 +173,8 @@ Reads the Jira `.doc` export via Word COM and emits JSON on stdout:
 |---|---|
 | `raw` | verbatim intake field values |
 | `derived` | campaign name, MMDDYY, year, `is_ab_test`, `campaign_name_a`, `campaign_name_b` |
-| `ampscript_proposed` | best-guess `ProjectAmpscript.amp` variable values |
-| `extras` | Figma link, additional legal, send date |
+| `ampscript_proposed` | best-guess `ProjectAmpscript.amp` variable values, including `DataSpec` (`MIF` / `Engage`) and `SegmentName` / `SegmentGeneral` |
+| `extras` | Figma link, additional legal, send date, `data_spec_evidence` (ticket lines that mention Members in Force / MiF) |
 | `campaign_urls` | Campaign URLs table as `{placement, section, type, cell_instructions, url}` rows |
 
 `section` comes from a `(section N)` prefix and matches the section order in the creative, so a URL maps straight to a module. `cell_instructions` does double duty: on an `Image` row it's the alt text; on a `CTA Button` / `Text Link` row it's the visible label.
@@ -180,13 +209,24 @@ py .claude/scripts/de_tabs.py finalize <path-to.xls> <campaign-name>
 
 Requires `xlrd` 2.0.1 + `pywin32` + Microsoft Excel.
 
+### `qa/email_qa.py`
+
+```
+py .claude/scripts/qa/email_qa.py doc-text "<jira export>"
+py .claude/scripts/qa/email_qa.py check --html "<build.html>" --expected qa/expected.json --figma "<figma.pdf>" --out qa/qa_results.json [--sent-html …] [--eml …] [--version …] [--offline] [--no-validate]
+```
+
+`doc-text` flattens the Jira export to `field | value` lines. `check` prints a FLAG / WARN / MANUAL / PASS summary and writes the full results to JSON. The companion scripts in `scripts/qa/` turn the report into a PDF (`report_pdf.py`), fill the checklist (`fill_checklist.py`), and render screenshots if Playwright is installed (`render.py`).
+
+Requires `beautifulsoup4`, `requests`, `pillow`, `pypdf`, `openpyxl` (optional `playwright`).
+
 ## Requirements
 
 - **Python 3.12**, callable as `py`
-- **Packages**: `pywin32`, `pymupdf`, `xlrd` 2.0.1, `xlwt`, `openpyxl`
+- **Packages**: `pywin32`, `pymupdf`, `xlrd` 2.0.1, `xlwt`, `openpyxl`; for `/qa-email` also `beautifulsoup4`, `requests`, `pillow`, `pypdf` (optional `playwright`)
 - **Microsoft Word and Excel installed** — both `parse_intake.py` and `de_tabs.py` drive them over COM, so these commands are Windows-only
 - Claude Code, run with `BoilerplateV2` (or a project folder under it) as the working directory
 
 ```powershell
-py -m pip install pywin32 pymupdf xlrd==2.0.1 xlwt openpyxl
+py -m pip install pywin32 pymupdf xlrd==2.0.1 xlwt openpyxl beautifulsoup4 requests pillow pypdf
 ```
