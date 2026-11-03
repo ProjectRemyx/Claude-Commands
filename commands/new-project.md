@@ -176,6 +176,8 @@ Open the new project's `ProjectAmpscript.amp` and update the variable values usi
 
 **Standalone variant** (Step 3 = Standalone, not Via Highlights): the file has its own inline `SET @SegmentName = ''` / `SET @SegmentGeneral = ''` lines near the top. Fill those with the same two values — the standalone file never loads `ProjectAmpscript`, so leaving them empty blanks the test subject line's segment and the Inbox Monster tagging.
 
+**Impression region name** (Standard variant): the HTML Email Block wraps `ProjectMiddle01` in `%%=BeginImpressionRegion("SegmentName")=%%`, where `"SegmentName"` is a literal placeholder, not a variable. Replace it with the actual `@SegmentName` value — `%%=BeginImpressionRegion("<campaign_name>")=%%` — so the region reports under the campaign instead of under the word `SegmentName`. Edit only the string inside the quotes; leave the `EndImpressionRegion(0)` line alone. On an A/B project make the same edit in **both** HTML Email Blocks, with the same `@SegmentName` value in each.
+
 **Leave `@ReviewRound = 'DEV'` as-is** — it's the test prefix and the user changes it manually per review round.
 
 ### A/B test additions
@@ -247,6 +249,7 @@ Print a tight summary:
 - Files renamed
 - **A/B test** (only when Yes): the two HTML Email Block filenames and the `@email_version` value in each, that both point at the same `@ProjectFolderID` and share one `ProjectAmpscript` / `ProjectMiddle01` / `ProjectLegal`, whether `@SubjectLine` / `@PreviewText` were branched or left common, and what the ticket says actually differs between the variants (`raw.ab_goal`) so the developer knows what still needs branching in `ProjectMiddle01.htm`
 - Variables set in `ProjectAmpscript.amp` (just the changed ones) — always include `@DataSpec` (and, when `MIF`, the ticket line that triggered it) and the `@SegmentName` / `@SegmentGeneral` values plus which branch they were written into
+- The impression region name set in the HTML Email Block (`BeginImpressionRegion("<campaign_name>")`)
 - `ProjectLegal.htm`: the legal copy placed, and which optional blocks were pruned vs. kept
 - Reminders: `ProjectMiddle01.htm` is the next file to edit; `@ProjectFolderID` in the HTML Email Block still holds the scaffold's ID and must be updated once the Content Builder folder exists (**in both files** on an A/B project); the data extension `.xls` may need tab cleanup (`/edit-data-extension`); the Figma link from the intake is in `extras.figma_link`.
 

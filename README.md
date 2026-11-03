@@ -84,7 +84,7 @@ What it does:
 3. **Asks which HTML Email Block variant** — Standard (normal Content Block composition) or Standalone (flattened CSS, for Via heatmaps, Engage deployments, and 3rd-party vendor handoffs). Deletes the unused one.
 4. **Creates the project folder** at `E:\Lumenalta\AAA SFMC Files\<YEAR>\<campaign_name>\` by copying `EMC_SAMPLE_MMDDYY/`, then strips the scaffold's reference material out of `assets/` so only the DE `.xls` remains.
 5. **Renames** the HTML Email Block file(s) and the `.xls` from `EMC_SAMPLE_MMDDYY*` to the campaign name. **On an A/B test** (`A/B Test: Yes` on the ticket) it instead writes **two** HTML Email Blocks — one named after `Campaign Name A`, one after `Campaign Name B` — in the one project folder, each with a `SET @email_version = 'A'` / `'B'` line directly under `SET @ProjectFolderID`.
-6. **Pre-fills `ProjectAmpscript.amp`** with the confirmed values — including `@SegmentName` / `@SegmentGeneral` in whichever Data-mapping branch will run (single-send AAA MWG campaigns included), and in the Standalone file's inline header when that variant is picked.
+6. **Pre-fills `ProjectAmpscript.amp`** with the confirmed values — including `@SegmentName` / `@SegmentGeneral` in whichever Data-mapping branch will run (single-send AAA MWG campaigns included), and in the Standalone file's inline header when that variant is picked. Also replaces the HTML Email Block's literal `BeginImpressionRegion("SegmentName")` placeholder with the campaign name (both files on an A/B project).
 7. **Fills in and prunes `ProjectLegal.htm`** — places the intake's additional legal below the `FtrRequired01` block, deletes the Lorem footnotes, and prunes the inapplicable conditional blocks (asking first, since re-adding means copying from the scaffold).
 
 Notable guardrails:
@@ -148,10 +148,10 @@ Pre-R1 QA of a finished build. **Read-only** — it never edits the build; fixes
 What it does:
 
 1. **Inventories inputs** and says which checks drop to MANUAL because something is missing.
-2. **Builds `qa/expected.json`** from the Jira export — campaign name, subject, preheader, send date, A/B, business unit, Data Spec, UTMs, the URL table, required legal.
+2. **Builds `qa/.work/expected.json`** from the Jira export — campaign name, subject, preheader, send date, A/B, business unit, Data Spec, UTMs, the URL table, required legal.
 3. **Runs `email_qa.py check`** — links and UTMs (body only; header/footer must carry none), redirects, images and alt text, copy vs. the Figma PDF, legal, AmpScript syntax, **Data Spec & segment names**, tracking pixel / impression regions, fonts, dark mode, responsive swaps, emoji, size and Gmail clipping, and Nu HTML Checker validation.
 4. **Judgment pass** over the Figma PDF and Inbox Monster screenshots — copy-diff triage, 1:1 visual, alt-text rules, personalization, legal, rendering (body modules only for dark mode).
-5. **Writes `qa/qa-report.pdf`** and a pre-filled copy of the R1 QA Checklist (`--r1` writes the R1 column instead of Dev).
+5. **Writes `qa/qa-report.pdf`** and a pre-filled copy of the R1 QA Checklist (`--r1` writes the R1 column instead of Dev). Intermediate JSON and the report Markdown go in `qa/.work/`, which is deleted once both outputs exist.
 
 The **Data Spec & segment names** check reads `ProjectAmpscript.amp` beside the build (or the inline header on a Standalone / Via build), works out which `@EmailType` / `@BusinessUnit` branch actually runs, and FLAGs: a live `@SegmentName` / `@SegmentGeneral` that's empty or still `EMC_SAMPLE…`; a `@DataSpec` that isn't `Engage` / `MIF` on an AAA MWG campaign, or that disagrees with the ticket; and an Engage branch still calling `_CmpgnDataSpecVars_010725` / `_081126` (those re-read Segment Name / General from the DE and overwrite the manual values). A segment name that's set but doesn't match the Jira campaign name is a WARN.
 
@@ -213,7 +213,7 @@ Requires `xlrd` 2.0.1 + `pywin32` + Microsoft Excel.
 
 ```
 py .claude/scripts/qa/email_qa.py doc-text "<jira export>"
-py .claude/scripts/qa/email_qa.py check --html "<build.html>" --expected qa/expected.json --figma "<figma.pdf>" --out qa/qa_results.json [--sent-html …] [--eml …] [--version …] [--offline] [--no-validate]
+py .claude/scripts/qa/email_qa.py check --html "<build.html>" --expected qa/.work/expected.json --figma "<figma.pdf>" --out qa/.work/qa_results.json [--sent-html …] [--eml …] [--version …] [--offline] [--no-validate]
 ```
 
 `doc-text` flattens the Jira export to `field | value` lines. `check` prints a FLAG / WARN / MANUAL / PASS summary and writes the full results to JSON. The companion scripts in `scripts/qa/` turn the report into a PDF (`report_pdf.py`), fill the checklist (`fill_checklist.py`), and render screenshots if Playwright is installed (`render.py`).

@@ -50,7 +50,9 @@ Glob the project folder and report a short table of what was found / missing and
 | Accuracy chart | `*accuracy*.xlsx` / `.pdf` | optional | header/footer URL accuracy MANUAL |
 | Checklist template | `.claude/templates/R1 QA Checklist.xlsx` | for the xlsx output | skip xlsx, report only |
 
-Create `qa/` in the project folder if it doesn't exist. All outputs go there.
+Create `qa/` in the project folder if it doesn't exist, plus a scratch folder `qa/.work/`.
+
+**Deliverables vs. scratch files.** The developer only ever opens `qa/qa-report.pdf` and the checklist `.xlsx`, so those are the only files this command leaves behind (along with the inputs the user dropped in `qa/` and the unzipped `qa/screens/`). Everything the scripts pass between each other — `expected.json`, `qa_results*.json`, `checklist_results.json`, and the report's `qa-report.md` source — goes in `qa/.work/` and is deleted in Step 6 once the PDF and xlsx exist. On Windows `.json` often opens in an unrelated app (e.g. After Effects), so never point the developer at a JSON file; every finding belongs in the report or the checklist.
 
 **Inbox Monster export zip:** unzip it into `qa/screens/` (Python `zipfile`, don't overwrite existing files). Map each image to a client from its filename (gmail / android / iphone / ios / apple mail / outlook / yahoo, and dark / light). Print the mapping; any image you can't map, look at it before guessing. The three required clients are Android Gmail, iOS Mail and Chrome Gmail — say which are missing.
 
@@ -58,7 +60,7 @@ Create `qa/` in the project folder if it doesn't exist. All outputs go there.
 
 1. `python .claude/scripts/qa/email_qa.py doc-text "<jira file>"` (Jira's Word export is HTML underneath; this flattens it to `field | value` lines).
 2. Map fields **the same way `/new-project` does** — read `.claude/commands/new-project.md` for the field names it uses, so both commands agree on the source of truth.
-3. Write `qa/expected.json` (omit keys you can't find — don't guess):
+3. Write `qa/.work/expected.json` (omit keys you can't find — don't guess):
 
 ```json
 {
@@ -81,11 +83,11 @@ Only put a key in `utm` if it is the same on every body link; per-link values be
 ## Step 3 — Deterministic checks
 
 ```
-python .claude/scripts/qa/email_qa.py check --html "<build.html>" --expected qa/expected.json \
+python .claude/scripts/qa/email_qa.py check --html "<build.html>" --expected qa/.work/expected.json \
   --figma "<figma.pdf>" [--sent-html "<qa/IM download.html>"] [--eml "<qa/test.eml>"] \
-  [--version "<other.html>" ...] --out qa/qa_results.json [--offline] [--no-validate]
+  [--version "<other.html>" ...] --out qa/.work/qa_results.json [--offline] [--no-validate]
 ```
-Read the printed summary. Open `qa/qa_results.json` only for the sections you need (`links`, `images`, `copy_blocks`, `redirects`) — don't dump the whole file or the whole HTML into context.
+Read the printed summary. Open `qa/.work/qa_results.json` only for the sections you need (`links`, `images`, `copy_blocks`, `redirects`) — don't dump the whole file or the whole HTML into context.
 
 If `utm_qa_check.py` exists in the repo (Glob for it), also run it against the Jira URL list and fold its result into the URL check.
 
@@ -109,7 +111,7 @@ Work through these; for each, cite evidence (element, alt text, URL, screenshot 
 7. **Rendering (only from `qa/screens/`)** — per screenshot, check: no mobile blue links (esp. iOS Gmail dark), dark-mode icon fills and legibility of body modules (header/footer excluded, see above), border-radius fallback consistency, Smart font weights in Apple Mail, Arial fallback keeps bold in Outlook, button borders, superscripts in Gmail, mobile image swaps, emoji glyphs. Name the screenshot for every finding.
 8. **Show/hide** — if the `responsive` check lists desktop-hidden content, list those items so both versions get reviewed.
 
-## Step 5 — Write `qa/qa-report.md`
+## Step 5 — Write `qa/.work/qa-report.md`
 
 Keep it scannable:
 
@@ -133,14 +135,14 @@ Result: N FLAG · N WARN · N MANUAL · N PASS
 - numbered list: exactly what to open and what to look at
 ```
 
-Then render the PDF the team actually reads: `python .claude/scripts/qa/report_pdf.py qa/qa-report.md` → `qa/qa-report.pdf` (banner, count tiles, colored status badges, flagged rows tinted). It prints through headless Edge/Chrome — no extra installs. The converter understands exactly the structure above (title / `Inputs:` / `Result:` lines, `>` callout, `##` sections, pipe tables with a `Status` column, `- [#N Area] …` blocking items, numbered lists, `**bold**`, `` `code` ``), so keep the Markdown to that shape. If it reports no browser found, the styled `qa/qa-report.html` is left in place to print manually — say so in the reply.
+Then render the PDF the team actually reads: `python .claude/scripts/qa/report_pdf.py qa/.work/qa-report.md --out qa/qa-report.pdf` → `qa/qa-report.pdf` (banner, count tiles, colored status badges, flagged rows tinted). It prints through headless Edge/Chrome — no extra installs. The converter understands exactly the structure above (title / `Inputs:` / `Result:` lines, `>` callout, `##` sections, pipe tables with a `Status` column, `- [#N Area] …` blocking items, numbered lists, `**bold**`, `` `code` ``), so keep the Markdown to that shape. If it reports no browser found, the styled `qa/qa-report.html` is left in place to print manually — say so in the reply.
 
 Spec → script check mapping: 1 campaign · 2 subject · 3 preheader · 4 send_date · 5 ab · 6 ampscript + data_spec · 7 figma_copy + header_footer + images + your visual pass · 8 legal · 9 links / links_sent / phone_text · 10 unsubscribe · 11 images + your alt-text pass · 12 screenshots only · 13 responsive + renders · 14 dark_mode · 15 fonts · 16 responsive (mobile images) · 17 emoji.
 
 ## Step 6 — Pre-fill the checklist
 
 1. `python .claude/scripts/qa/fill_checklist.py list --template ".claude/templates/R1 QA Checklist.xlsx"` to see the rows.
-2. Write `qa/checklist_results.json` with one entry per row (statuses must be `Pass`, `Flagged`, `N/A`, or `""` for "needs a human"). Notes ≤ 2 lines, start MANUAL items with what's needed.
+2. Write `qa/.work/checklist_results.json` as `{"rows": [{"match": …, "status": …, "note": …}]}`, one entry per row (statuses must be `Pass`, `Flagged`, `N/A`, or `""` for "needs a human"). Notes ≤ 2 lines, start MANUAL items with what's needed.
    Row `match` keys: `HTML + CSS validators` · `Ampscript inspected` · `Email matches Figma` · `Standard header present` · `Header copy is either` · `Header line of business` · `Coded copy matches` · `Phone numbers underlined` · `Clickable email text underlined` · `Footer legal links underlined` · `Numbered disclaimers` · `Only clickable images` · `Alt text color and size` · `Alignment considered` · `Icons have appropriate alt` · `Alt text matches the specified` · `Web URLs reviewed` · `No unencoded spaces` · `Redirect accuracy` · `Query string syntax` · `No UTMs in legal` · `open in a new tab` · `begin with https` · `Tel links formatted` · `Mailto links formatted` · `LOB footer present` · `Blue footer logo` · `Closing sentence business name` · `Stay connected with the app` · `Social app icons` · `Footer navigation present` · `Required legal present; link copy` · `Required legal present (Smart Home` · `Bread legal` · `Inbox Monster tracking pixel` · `Impression Region code` · `Items coded separately` · `No mobile blue links` · `Dark mode: icons` · `Border-radius` · `Smart web font weights` · `Arial fallback preserves bold` · `Button borders display` · `Superscript size` · `Chrome Yahoo` · `Code gradients` · `Inbox Monster Custom QA` · `Total message size` · `Spam Assassin` · `Gmail clipping`
    - Inbox Monster-only rows (`Custom QA`, `Spam Assassin`, `Chrome Yahoo`, `Button borders` without a Mac Mail screenshot) → `""` with a MANUAL note.
    - Use `N/A` only when the email clearly doesn't contain the thing (e.g. no app icons module).
@@ -148,8 +150,9 @@ Spec → script check mapping: 1 campaign · 2 subject · 3 preheader · 4 send_
    - `Web URLs reviewed` / `Query string syntax`: header & footer links without UTMs are correct; Flagged only if a header/footer link carries UTMs or a body link differs from the Jira URL table.
    - `Ampscript inspected`: fold in the `data_spec` result — Flagged if it FLAGged (placeholder/empty segment names, wrong or missing `@DataSpec`, old `CmpgnDataSpecVars` call).
    - `Icons have appropriate alt`: Pass when every `alt=""` icon sits beside a heading + body copy; Flagged when any `alt=""` icon has only a heading or only body copy beside it.
-3. `python .claude/scripts/qa/fill_checklist.py fill --template ".claude/templates/R1 QA Checklist.xlsx" --results qa/checklist_results.json --out "qa/R1 QA Checklist - <project> - AUTO.xlsx" --column dev` (use `--column r1` if `--r1` was passed). The template is copied, never modified; findings go in a new "Auto-QA (Claude)" column G, yellow = needs a human.
+3. `python .claude/scripts/qa/fill_checklist.py fill --template ".claude/templates/R1 QA Checklist.xlsx" --results qa/.work/checklist_results.json --out "qa/R1 QA Checklist - <project> - AUTO.xlsx" --column dev` (use `--column r1` if `--r1` was passed). The template is copied, never modified; findings go in a new "Auto-QA (Claude)" column G, yellow = needs a human.
+4. **Clean up.** If `qa/qa-report.pdf` and the checklist xlsx were both written, delete `qa/.work/` (Python `shutil.rmtree`). If either failed, keep `qa/.work/` so the run can be finished by hand, and say so in the reply. Only ever delete `qa/.work/` — never the user's inputs in `qa/` or `qa/screens/`.
 
 ## Step 7 — Reply in chat
 
-≤ 15 lines: the counts, the blocking flags (one line each), the top "needs a human" items, and the output paths (`qa/qa-report.pdf` first, then the checklist xlsx; the `.md` is the source, mention it only if the PDF failed). Don't repeat the whole report.
+≤ 15 lines: the counts, the blocking flags (one line each), the top "needs a human" items, and the output paths (`qa/qa-report.pdf` first, then the checklist xlsx; if the PDF failed, point at the kept `qa/.work/qa-report.md` and `qa/qa-report.html` instead). Don't repeat the whole report.
