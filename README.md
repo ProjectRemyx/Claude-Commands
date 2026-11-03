@@ -139,15 +139,15 @@ Notable guardrails:
 - Only touches Segment Name (col A) and Segment General (col B); test data, seed emails, and office data are yours to fill in.
 - Never converts to `.xlsx` — SFMC's DE upload expects `.xls`.
 
-## `/qa-email [project-folder] [--r1] [--offline] [--no-validate]`
+## `/qa-email [project-folder] [--inputs <folder>] [--r1] [--offline] [--no-validate]`
 
 Pre-R1 QA of a finished build. **Read-only** — it never edits the build; fixes go in the report for the developer to apply. Drop these in the project folder first (only the HTML is required; everything else upgrades checks from MANUAL):
 
-- the Jira export (`.doc`), the Figma PDF, and in `qa/`: the Inbox Monster **Export Previews** zip, the Inbox Monster **Download the HTML Content** file, an optional test-send `.eml`, and optional SFMC screenshots (`qa/screens/sfmc-*.png`).
+- the Jira export (`.doc`), the Figma PDF, the Inbox Monster **Export Previews** zip, the Inbox Monster **Download the HTML Content** file, an optional test-send `.eml`, and optional SFMC screenshots — in any folder. The command asks where they are when it runs (or pass `--inputs <folder>`); it reads the Jira/Figma files in place and copies the Inbox Monster files into the project's `qa/`.
 
 What it does:
 
-1. **Inventories inputs** and says which checks drop to MANUAL because something is missing.
+1. **Asks where the inputs are, then inventories them** and says which checks drop to MANUAL because something is missing.
 2. **Builds `qa/.work/expected.json`** from the Jira export — campaign name, subject, preheader, send date, A/B, business unit, Data Spec, UTMs, the URL table, required legal.
 3. **Runs `email_qa.py check`** — links and UTMs (body only; header/footer must carry none), redirects, images and alt text, copy vs. the Figma PDF, legal, AmpScript syntax, **Data Spec & segment names**, tracking pixel / impression regions, fonts, dark mode, responsive swaps, emoji, size and Gmail clipping, and Nu HTML Checker validation.
 4. **Judgment pass** over the Figma PDF and Inbox Monster screenshots — copy-diff triage, 1:1 visual, alt-text rules, personalization, legal, rendering (body modules only for dark mode).

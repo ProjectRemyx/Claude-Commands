@@ -1,7 +1,7 @@
 ---
 description: Pre-R1 QA of a built email — Jira/Figma/HTML/test-send checks, writes qa-report.pdf and a pre-filled R1 QA Checklist
-argument-hint: [project-folder] [--r1] [--offline] [--no-validate]
-allowed-tools: Bash(python:*), Bash(python3:*), Bash(py:*), PowerShell(python:*), PowerShell(python3:*), PowerShell(py:*), Read, Write, Glob, Grep
+argument-hint: [project-folder] [--inputs <folder>] [--r1] [--offline] [--no-validate]
+allowed-tools: Bash(python:*), Bash(python3:*), Bash(py:*), PowerShell(python:*), PowerShell(python3:*), PowerShell(py:*), Read, Write, Glob, Grep, AskUserQuestion
 ---
 
 # /qa-email
@@ -10,6 +10,7 @@ You are running QA on a finished email build. QA is **read-only**: never edit th
 
 Arguments: `$ARGUMENTS`
 - First non-flag argument = project folder (default: current directory).
+- `--inputs <folder>` → where the QA inputs live (Jira export, Figma PDFs, Inbox Monster exports, test send, screenshots). Repeatable. When given, Step 1 skips the question about where the inputs are.
 - `--r1` → write statuses to the **R1** column of the checklist (default: **Dev** column).
 - `--offline` → skip all HTTP requests (link redirects, image loads).
 - `--no-validate` → don't send the HTML to validator.w3.org. Validation is ON by default: every version is run through the Nu HTML Checker (the same service as validator.w3.org/nu, and it validates the CSS in `<style>` and `style=""` too). It validates the **build HTML from the project folder** (the base versions, i.e. `--html` + every `--version`), not the post-send/Inbox Monster HTML. AmpScript is stripped first. Only **errors** are flagged; errors matching `patterns` in `.claude/scripts/qa/validator_exceptions.json` are listed as known email exceptions. Warnings are ignored except the short `important_warnings` list, which shows as WARN, never FLAG.
@@ -32,27 +33,44 @@ Never mark PASS on something you did not actually verify. Anything that depends 
 
 ---
 
-## Step 1 — Inventory inputs
+## Step 1 — Find and inventory the inputs
 
-Glob the project folder and report a short table of what was found / missing and which checks are downgraded to MANUAL as a result. Only stop if there is no HTML.
+### 1a. Ask where the inputs are
+
+Team members keep QA inputs in different places — the project folder, its `qa/` subfolder, a separate spec-docs folder per job, Downloads, a shared drive. **Never assume a location.** Unless `--inputs` was passed:
+
+1. Glob the project folder and its `qa/` for the inputs in the table below.
+2. Ask the user with `AskUserQuestion` (single question, header `QA inputs`) where the Jira export, Figma PDFs and Inbox Monster exports are. Options:
+   - **Project folder only** — description lists what step 1 already found there (e.g. “found: build HTML, IM zip; missing: Jira export, Figma PDF”). Mark it `(Recommended)` and put it first only when nothing strongly required is missing.
+   - **Another folder** — “I'll type the path (Other)”. The user types it via the automatic *Other* option.
+   - **No IM exports yet** — run with what's in the project folder; rendering checks become MANUAL.
+3. If the user gives a path, check it exists before using it; if it doesn't, say so and ask again. Accept quoted paths, paths with spaces, `& '...'` PowerShell drag-and-drop strings, and a file path (use its folder). The user may name more than one folder — search all of them.
+
+Search the input folder(s) **non-recursively first**, then one level down. If a pattern matches more than one file (e.g. two Jira `.doc`s, several IM zips), list them and ask which one rather than picking by date.
+
+**Copy, don't move.** Copy the Inbox Monster zip, IM HTML download, `.eml` and loose screenshots into the project's `qa/` (Python `shutil.copy2`, never overwrite an existing file) so the PDF report and the evidence it cites sit together. Read the Jira export and Figma PDFs **in place** — don't copy them. Never delete or modify anything in the user's input folder.
+
+### 1b. Inventory
+
+Glob the project folder and the input folder(s) and report a short table of what was found / missing and which checks are downgraded to MANUAL as a result. Only stop if there is no HTML.
 
 | Input | Where to look | Required? | If missing |
 |---|---|---|---|
 | Build HTML (with AmpScript) | `*.html` in project root / `build/` | **Yes** | stop |
 | Other versions (A/B, segments) | other `*.html` | no | A/B diff skipped |
-| Jira export | `*.doc` / `*.docx` / `*.html` from Jira | strongly | subject/preheader/URLs/campaign become MANUAL |
-| Figma PDF | `*.pdf` (same export `/generate-projectmiddle01` uses) | strongly | copy diff + 1:1 review become MANUAL |
-| Inbox Monster previews export | `qa/*.zip` (Rendering report → ⋯ → **Export Previews**) | for rendering checks | all rendering/dark-mode/font/emoji checks MANUAL |
-| Inbox Monster HTML | `qa/*.html` (Rendering report → ⋯ → **Download the HTML Content**) | recommended | tracked links + post-send size downgraded |
-| Test send | `qa/*.eml` | optional | only adds From name + List-Unsubscribe headers on top of the IM HTML |
-| Loose screenshots | `qa/screens/*.png` | optional | — |
+| Jira export | `*.doc` / `*.docx` / `*.html` from Jira (input folder) | strongly | subject/preheader/URLs/campaign become MANUAL |
+| Figma PDF | `*.pdf` in the input folder (same export `/generate-projectmiddle01` uses); desktop + mobile if both exist | strongly | copy diff + 1:1 review become MANUAL |
+| Inbox Monster previews export | `*.zip` in the input folder or `qa/` (Rendering report → ⋯ → **Export Previews**) | for rendering checks | all rendering/dark-mode/font/emoji checks MANUAL |
+| Inbox Monster HTML | `*.html` in the input folder or `qa/` (name usually starts with the test subject, e.g. `TEST_-_DEV_-_…`) (Rendering report → ⋯ → **Download the HTML Content**) | recommended | tracked links + post-send size downgraded |
+| Test send | `*.eml` in the input folder or `qa/` | optional | only adds From name + List-Unsubscribe headers on top of the IM HTML |
+| Loose screenshots | `*.png` / `*.jpg` in the input folder or `qa/screens/` | optional | — |
 | SFMC screenshots | `qa/screens/sfmc-*.png` (send definition / journey / A-B test config) | optional | send date + A/B setup MANUAL |
-| Accuracy chart | `*accuracy*.xlsx` / `.pdf` | optional | header/footer URL accuracy MANUAL |
+| Accuracy chart | `*accuracy*.xlsx` / `.pdf` in the input folder or project | optional | header/footer URL accuracy MANUAL |
 | Checklist template | `.claude/templates/R1 QA Checklist.xlsx` | for the xlsx output | skip xlsx, report only |
 
 Create `qa/` in the project folder if it doesn't exist, plus a scratch folder `qa/.work/`.
 
-**Deliverables vs. scratch files.** The developer only ever opens `qa/qa-report.pdf` and the checklist `.xlsx`, so those are the only files this command leaves behind (along with the inputs the user dropped in `qa/` and the unzipped `qa/screens/`). Everything the scripts pass between each other — `expected.json`, `qa_results*.json`, `checklist_results.json`, and the report's `qa-report.md` source — goes in `qa/.work/` and is deleted in Step 6 once the PDF and xlsx exist. On Windows `.json` often opens in an unrelated app (e.g. After Effects), so never point the developer at a JSON file; every finding belongs in the report or the checklist.
+**Deliverables vs. scratch files.** The developer only ever opens `qa/qa-report.pdf` and the checklist `.xlsx`, so those are the only files this command leaves behind (along with the input copies from Step 1a and the unzipped `qa/screens/`). Everything the scripts pass between each other — `expected.json`, `qa_results*.json`, `checklist_results.json`, and the report's `qa-report.md` source — goes in `qa/.work/` and is deleted in Step 6 once the PDF and xlsx exist. On Windows `.json` often opens in an unrelated app (e.g. After Effects), so never point the developer at a JSON file; every finding belongs in the report or the checklist.
 
 **Inbox Monster export zip:** unzip it into `qa/screens/` (Python `zipfile`, don't overwrite existing files). Map each image to a client from its filename (gmail / android / iphone / ios / apple mail / outlook / yahoo, and dark / light). Print the mapping; any image you can't map, look at it before guessing. The three required clients are Android Gmail, iOS Mail and Chrome Gmail — say which are missing.
 
