@@ -8,18 +8,33 @@ fill_checklist.py — write /qa-email results into a COPY of the R1 QA Checklist
 
 checklist_results.json:
 {
-  "project_name": "...", "developer": "...",            (optional, fill the header block)
+  "project_name": "<SegmentName>",                      (optional → C5 Project Name)
+  "developer": "<Jira Assignee>",                      (optional → C6 Developer Name)
+  "r1_due_date": "05/Nov/26 | 2026-11-05 | 11/05/2026", (optional → C10 R1 QA due date, the Jira "R1 QA Date")
   "rows": [ {"match": "Phone numbers underlined", "status": "Pass|Flagged|N/A|", "note": "..."} ]
 }
+The Inbox Monster proofing URLs (C7–C9) are never filled — the developer adds them.
 `match` is a case-insensitive substring of the Check text (column B). Empty status = left for a human;
 the note still goes in the new "Auto-QA" column G. The template is never modified.
 """
 import argparse, json, shutil, sys
 from copy import copy
+from datetime import datetime
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 VALID = {"Pass", "Flagged", "N/A", ""}
+DATE_FORMATS = ("%d/%b/%y", "%d/%b/%Y", "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y")  # Jira exports "05/Nov/26"
+
+
+def parse_date(s):
+    s = str(s).strip()
+    for f in DATE_FORMATS:
+        try:
+            return datetime.strptime(s, f)
+        except ValueError:
+            pass
+    return None
 
 
 def find_header(ws):
@@ -74,6 +89,15 @@ def main():
         ws["C5"] = res["project_name"]
     if res.get("developer"):
         ws["C6"] = res["developer"]
+    if res.get("r1_due_date"):
+        d = parse_date(res["r1_due_date"])
+        if d:
+            ws["C10"] = d
+            ws["C10"].number_format = "mm/dd/yyyy"
+        else:  # unrecognised format: keep the Jira text rather than drop it
+            ws["C10"] = str(res["r1_due_date"])
+            print(f"R1 due date {res['r1_due_date']!r} not parsed as a date — written as text")
+    # C7–C9 Inbox Monster proofing URLs are left for the developer.
 
     unmatched, used = [], set()
     for item in res.get("rows", []):

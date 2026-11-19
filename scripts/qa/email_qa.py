@@ -1053,6 +1053,8 @@ def check_data_spec(html_path, raw, expected):
     sn, sg = v.get("@segmentname"), v.get("@segmentgeneral")
     d.append(f"Read from {src}: @EmailType={et or '—'} · @BusinessUnit={bu or '—'} · @DataSpec={ds or '—'}")
     d.append(f"Live @SegmentName={sn!r} · @SegmentGeneral={sg!r}")
+    if sn and not SEG_PLACEHOLDER.search(sn):
+        RESULTS_EXTRA["segment_name"] = sn  # names the report PDF + checklist Project Name
 
     for name, val in (("@SegmentName", sn), ("@SegmentGeneral", sg)):
         if val is None:
@@ -1146,6 +1148,7 @@ def run_check(a):
 
     order_ = {"FLAG": 0, "WARN": 1, "MANUAL": 2, "PASS": 3, "NA": 4, "INFO": 5}
     print(f"email_qa: {len(RESULTS)} checks → {a.out}")
+    print(f"segment_name: {RESULTS_EXTRA.get('segment_name') or '(not found — fall back to the Jira campaign name)'}")
     for r in sorted(RESULTS, key=lambda r: order_[r["status"]]):
         print(f"[{r['status']:6}] {r['title']}")
         if r["status"] in ("FLAG", "WARN"):

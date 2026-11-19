@@ -1,5 +1,5 @@
 ---
-description: Pre-R1 QA of a built email — Jira/Figma/HTML/test-send checks, writes qa-report.pdf and a pre-filled R1 QA Checklist
+description: Pre-R1 QA of a built email — Jira/Figma/HTML/test-send checks, writes qa_report_<SegmentName>.pdf and a pre-filled R1 QA Checklist
 argument-hint: [project-folder] [--inputs <folder>] [--r1] [--offline] [--no-validate]
 allowed-tools: Bash(python:*), Bash(python3:*), Bash(py:*), PowerShell(python:*), PowerShell(python3:*), PowerShell(py:*), Read, Write, Glob, Grep, AskUserQuestion
 ---
@@ -70,7 +70,7 @@ Glob the project folder and the input folder(s) and report a short table of what
 
 Create `qa/` in the project folder if it doesn't exist, plus a scratch folder `qa/.work/`.
 
-**Deliverables vs. scratch files.** The developer only ever opens `qa/qa-report.pdf` and the checklist `.xlsx`, so those are the only files this command leaves behind (along with the input copies from Step 1a and the unzipped `qa/screens/`). Everything the scripts pass between each other — `expected.json`, `qa_results*.json`, `checklist_results.json`, and the report's `qa-report.md` source — goes in `qa/.work/` and is deleted in Step 6 once the PDF and xlsx exist. On Windows `.json` often opens in an unrelated app (e.g. After Effects), so never point the developer at a JSON file; every finding belongs in the report or the checklist.
+**Deliverables vs. scratch files.** The developer only ever opens `qa/qa_report_<SegmentName>.pdf` and the checklist `.xlsx`, so those are the only files this command leaves behind (along with the input copies from Step 1a and the unzipped `qa/screens/`). Everything the scripts pass between each other — `expected.json`, `qa_results*.json`, `checklist_results.json`, and the report's `qa-report.md` source — goes in `qa/.work/` and is deleted in Step 6 once the PDF and xlsx exist. On Windows `.json` often opens in an unrelated app (e.g. After Effects), so never point the developer at a JSON file; every finding belongs in the report or the checklist.
 
 **Inbox Monster export zip:** unzip it into `qa/screens/` (Python `zipfile`, don't overwrite existing files). Map each image to a client from its filename (gmail / android / iphone / ios / apple mail / outlook / yahoo, and dark / light). Print the mapping; any image you can't map, look at it before guessing. The three required clients are Android Gmail, iOS Mail and Chrome Gmail — say which are missing.
 
@@ -84,6 +84,8 @@ Create `qa/` in the project folder if it doesn't exist, plus a scratch folder `q
 {
   "campaign_name": "", "subject": "", "preheader": "", "from_name": "",
   "send_date": "YYYY-MM-DD",
+  "r1_qa_date": "05/Nov/26",
+  "assignee": "",
   "ab_test": false, "ab_variants": {"A": "...", "B": "..."},
   "business_unit": "AAA MWG | A3 Smart Home",
   "data_spec": "Engage | MIF",
@@ -96,6 +98,10 @@ Create `qa/` in the project folder if it doesn't exist, plus a scratch folder `q
 ```
 Only put a key in `utm` if it is the same on every body link; per-link values belong in `urls`.
 
+`r1_qa_date` is the ticket's **`R1 QA Date:`** field (Jira metadata near the top of the export, e.g. `R1 QA Date: | 05/Nov/26`) — copy it verbatim; `fill_checklist.py` parses Jira's `DD/Mon/YY` form. Don't confuse it with `R2 QA Date`, `Due`, `Start date` or `Request Send Date`. Omit it if the field is blank.
+
+`assignee` is the ticket's own **`Assignee:`** field — in the Jira metadata it shares a line with Reporter (`Reporter: | Robert Evans | Assignee: | Jose Andres`). Take the value after `Assignee:` on that line only; the **Sub-tasks** table further down also has an Assignee column (the R1 / R1.5 QA reviewers) — never use those. Omit it if the ticket is `Unassigned`.
+
 `data_spec` follows the same rule `/new-project` uses: `MIF` if the ticket mentions **Members in Force** or **MiF** anywhere (fields, free text, or Comments), otherwise `Engage`. Set it only for an `AAA MWG` single-send campaign. `campaign_name` matters more than usual here: the script checks `@SegmentName` against it, and `@SegmentGeneral` against it minus the trailing `_MMDDYY`.
 
 ## Step 3 — Deterministic checks
@@ -105,7 +111,7 @@ python .claude/scripts/qa/email_qa.py check --html "<build.html>" --expected qa/
   --figma "<figma.pdf>" [--sent-html "<qa/IM download.html>"] [--eml "<qa/test.eml>"] \
   [--version "<other.html>" ...] --out qa/.work/qa_results.json [--offline] [--no-validate]
 ```
-Read the printed summary. Open `qa/.work/qa_results.json` only for the sections you need (`links`, `images`, `copy_blocks`, `redirects`) — don't dump the whole file or the whole HTML into context.
+Read the printed summary. It ends with a `segment_name:` line — the live `@SegmentName` from `ProjectAmpscript.amp` (also `segment_name` in `qa_results.json`). That is **`<SegmentName>`** everywhere below (report filename, checklist Project Name, checklist filename). If the script couldn't read one (MANUAL / placeholder), use `expected.campaign_name` instead and say so in the reply. Open `qa/.work/qa_results.json` only for the sections you need (`links`, `images`, `copy_blocks`, `redirects`) — don't dump the whole file or the whole HTML into context.
 
 If `utm_qa_check.py` exists in the repo (Glob for it), also run it against the Jira URL list and fold its result into the URL check.
 
@@ -153,14 +159,14 @@ Result: N FLAG · N WARN · N MANUAL · N PASS
 - numbered list: exactly what to open and what to look at
 ```
 
-Then render the PDF the team actually reads: `python .claude/scripts/qa/report_pdf.py qa/.work/qa-report.md --out qa/qa-report.pdf` → `qa/qa-report.pdf` (banner, count tiles, colored status badges, flagged rows tinted). It prints through headless Edge/Chrome — no extra installs. The converter understands exactly the structure above (title / `Inputs:` / `Result:` lines, `>` callout, `##` sections, pipe tables with a `Status` column, `- [#N Area] …` blocking items, numbered lists, `**bold**`, `` `code` ``), so keep the Markdown to that shape. If it reports no browser found, the styled `qa/qa-report.html` is left in place to print manually — say so in the reply.
+Then render the PDF the team actually reads: `python .claude/scripts/qa/report_pdf.py qa/.work/qa-report.md --out "qa/qa_report_<SegmentName>.pdf"` → `qa/qa_report_<SegmentName>.pdf` (underscores, e.g. `qa/qa_report_DMC_MEMB_EML_CAM_ENG_QUICKQUACKLTO_111026.pdf`) (banner, count tiles, colored status badges, flagged rows tinted). It prints through headless Edge/Chrome — no extra installs. The converter understands exactly the structure above (title / `Inputs:` / `Result:` lines, `>` callout, `##` sections, pipe tables with a `Status` column, `- [#N Area] …` blocking items, numbered lists, `**bold**`, `` `code` ``), so keep the Markdown to that shape. If it reports no browser found, the styled `qa/qa_report_<SegmentName>.html` is left in place to print manually — say so in the reply.
 
 Spec → script check mapping: 1 campaign · 2 subject · 3 preheader · 4 send_date · 5 ab · 6 ampscript + data_spec · 7 figma_copy + header_footer + images + your visual pass · 8 legal · 9 links / links_sent / phone_text · 10 unsubscribe · 11 images + your alt-text pass · 12 screenshots only · 13 responsive + renders · 14 dark_mode · 15 fonts · 16 responsive (mobile images) · 17 emoji.
 
 ## Step 6 — Pre-fill the checklist
 
 1. `python .claude/scripts/qa/fill_checklist.py list --template ".claude/templates/R1 QA Checklist.xlsx"` to see the rows.
-2. Write `qa/.work/checklist_results.json` as `{"rows": [{"match": …, "status": …, "note": …}]}`, one entry per row (statuses must be `Pass`, `Flagged`, `N/A`, or `""` for "needs a human"). Notes ≤ 2 lines, start MANUAL items with what's needed.
+2. Write `qa/.work/checklist_results.json` as `{"project_name": "<SegmentName>", "developer": "<expected.assignee>", "r1_due_date": "<expected.r1_qa_date>", "rows": [{"match": …, "status": …, "note": …}]}`. `project_name` fills **Project Name** (C5); `developer` fills **Developer Name** (C6) from the ticket's Assignee; `r1_due_date` fills **R1 QA due date** (C10) — omit either key if the ticket didn't have it. The three **Inbox Monster proofing URL** rows are left blank for the developer to fill in — never put anything in them. One `rows` entry per row (statuses must be `Pass`, `Flagged`, `N/A`, or `""` for "needs a human"). Notes ≤ 2 lines, start MANUAL items with what's needed.
    Row `match` keys: `HTML + CSS validators` · `Ampscript inspected` · `Email matches Figma` · `Standard header present` · `Header copy is either` · `Header line of business` · `Coded copy matches` · `Phone numbers underlined` · `Clickable email text underlined` · `Footer legal links underlined` · `Numbered disclaimers` · `Only clickable images` · `Alt text color and size` · `Alignment considered` · `Icons have appropriate alt` · `Alt text matches the specified` · `Web URLs reviewed` · `No unencoded spaces` · `Redirect accuracy` · `Query string syntax` · `No UTMs in legal` · `open in a new tab` · `begin with https` · `Tel links formatted` · `Mailto links formatted` · `LOB footer present` · `Blue footer logo` · `Closing sentence business name` · `Stay connected with the app` · `Social app icons` · `Footer navigation present` · `Required legal present; link copy` · `Required legal present (Smart Home` · `Bread legal` · `Inbox Monster tracking pixel` · `Impression Region code` · `Items coded separately` · `No mobile blue links` · `Dark mode: icons` · `Border-radius` · `Smart web font weights` · `Arial fallback preserves bold` · `Button borders display` · `Superscript size` · `Chrome Yahoo` · `Code gradients` · `Inbox Monster Custom QA` · `Total message size` · `Spam Assassin` · `Gmail clipping`
    - Inbox Monster-only rows (`Custom QA`, `Spam Assassin`, `Chrome Yahoo`, `Button borders` without a Mac Mail screenshot) → `""` with a MANUAL note.
    - Use `N/A` only when the email clearly doesn't contain the thing (e.g. no app icons module).
@@ -168,9 +174,9 @@ Spec → script check mapping: 1 campaign · 2 subject · 3 preheader · 4 send_
    - `Web URLs reviewed` / `Query string syntax`: header & footer links without UTMs are correct; Flagged only if a header/footer link carries UTMs or a body link differs from the Jira URL table.
    - `Ampscript inspected`: fold in the `data_spec` result — Flagged if it FLAGged (placeholder/empty segment names, wrong or missing `@DataSpec`, old `CmpgnDataSpecVars` call).
    - `Icons have appropriate alt`: Pass when every `alt=""` icon sits beside a heading + body copy; Flagged when any `alt=""` icon has only a heading or only body copy beside it.
-3. `python .claude/scripts/qa/fill_checklist.py fill --template ".claude/templates/R1 QA Checklist.xlsx" --results qa/.work/checklist_results.json --out "qa/R1 QA Checklist - <project> - AUTO.xlsx" --column dev` (use `--column r1` if `--r1` was passed). The template is copied, never modified; findings go in a new "Auto-QA (Claude)" column G, yellow = needs a human.
-4. **Clean up.** If `qa/qa-report.pdf` and the checklist xlsx were both written, delete `qa/.work/` (Python `shutil.rmtree`). If either failed, keep `qa/.work/` so the run can be finished by hand, and say so in the reply. Only ever delete `qa/.work/` — never the user's inputs in `qa/` or `qa/screens/`.
+3. `python .claude/scripts/qa/fill_checklist.py fill --template ".claude/templates/R1 QA Checklist.xlsx" --results qa/.work/checklist_results.json --out "qa/R1 QA Checklist - <SegmentName> - AUTO.xlsx" --column dev` (use `--column r1` if `--r1` was passed). The template is copied, never modified; findings go in a new "Auto-QA (Claude)" column G, yellow = needs a human.
+4. **Clean up.** If `qa/qa_report_<SegmentName>.pdf` and the checklist xlsx were both written, delete `qa/.work/` (Python `shutil.rmtree`). If either failed, keep `qa/.work/` so the run can be finished by hand, and say so in the reply. Only ever delete `qa/.work/` — never the user's inputs in `qa/` or `qa/screens/`.
 
 ## Step 7 — Reply in chat
 
-≤ 15 lines: the counts, the blocking flags (one line each), the top "needs a human" items, and the output paths (`qa/qa-report.pdf` first, then the checklist xlsx; if the PDF failed, point at the kept `qa/.work/qa-report.md` and `qa/qa-report.html` instead). Don't repeat the whole report.
+≤ 15 lines: the counts, the blocking flags (one line each), the top "needs a human" items, and the output paths (`qa/qa_report_<SegmentName>.pdf` first, then the checklist xlsx; if the PDF failed, point at the kept `qa/.work/qa-report.md` and `qa/qa_report_<SegmentName>.html` instead), and a reminder that the Inbox Monster proofing URLs in the checklist still need filling in by hand (plus Developer Name, if the ticket was unassigned). Don't repeat the whole report.

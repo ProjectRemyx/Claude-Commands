@@ -64,7 +64,7 @@ Include what you were doing, what you expected, and what happened (a paste of th
 1. /new-project <intake.doc>          scaffold the project folder + ProjectAmpscript + ProjectLegal
 2. /generate-projectmiddle01          measure the creative, stitch and spec ProjectMiddle01.htm
 3. /edit-data-extension               prune DE tabs, dedupe sample sets, set Segment Name/General
-4. /qa-email                          pre-R1 QA: qa/qa-report.pdf + pre-filled R1 QA Checklist
+4. /qa-email                          pre-R1 QA: qa/qa_report_<SegmentName>.pdf + pre-filled R1 QA Checklist
 ```
 
 Every command that writes project files stops and asks for confirmation first (`/qa-email` is read-only — it only writes into `qa/`). The LOB-to-footer mapping, `@EmailType` (Triggered vs. Journey), module variant choice, and the DE keep-list all need a human eye — none of them are reliably derivable from the intake alone.
@@ -151,7 +151,7 @@ What it does:
 2. **Builds `qa/.work/expected.json`** from the Jira export — campaign name, subject, preheader, send date, A/B, business unit, Data Spec, UTMs, the URL table, required legal.
 3. **Runs `email_qa.py check`** — links and UTMs (body only; header/footer must carry none), redirects, images and alt text, copy vs. the Figma PDF, legal, AmpScript syntax, **Data Spec & segment names**, tracking pixel / impression regions, fonts, dark mode, responsive swaps, emoji, size and Gmail clipping, and Nu HTML Checker validation.
 4. **Judgment pass** over the Figma PDF and Inbox Monster screenshots — copy-diff triage, 1:1 visual, alt-text rules, personalization, legal, rendering (body modules only for dark mode).
-5. **Writes `qa/qa-report.pdf`** and a pre-filled copy of the R1 QA Checklist (`--r1` writes the R1 column instead of Dev). Intermediate JSON and the report Markdown go in `qa/.work/`, which is deleted once both outputs exist.
+5. **Writes `qa/qa_report_<SegmentName>.pdf`** and a pre-filled copy of the R1 QA Checklist — Project Name = SegmentName, Developer Name = the ticket's Assignee, R1 QA due date = the ticket's R1 QA Date; the Inbox Monster proofing URLs are left for the developer (`--r1` writes the R1 column instead of Dev). Intermediate JSON and the report Markdown go in `qa/.work/`, which is deleted once both outputs exist.
 
 The **Data Spec & segment names** check reads `ProjectAmpscript.amp` beside the build (or the inline header on a Standalone / Via build), works out which `@EmailType` / `@BusinessUnit` branch actually runs, and FLAGs: a live `@SegmentName` / `@SegmentGeneral` that's empty or still `EMC_SAMPLE…`; a `@DataSpec` that isn't `Engage` / `MIF` on an AAA MWG campaign, or that disagrees with the ticket; and an Engage branch still calling `_CmpgnDataSpecVars_010725` / `_081126` (those re-read Segment Name / General from the DE and overwrite the manual values). A segment name that's set but doesn't match the Jira campaign name is a WARN.
 
