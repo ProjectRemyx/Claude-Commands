@@ -1086,6 +1086,118 @@ def check_data_spec(html_path, raw, expected):
     add("data_spec", "Data Spec & segment names", status, d, [6], ["Ampscript inspected"])
 
 
+# Lookups must read test DEs on test sends / previews and live DEs on live sends.
+# House pattern:  IF _IsTestSend == 'true' OR _messagecontext == 'PREVIEW' THEN <TEST DE> ELSE <live DE> ENDIF
+# (_IsTestSend alone misses Subscriber Preview; _messagecontext alone misses test sends, which run as 'SEND').
+# The gate may wrap the lookup itself or the SET of the DE-name variable the lookup is passed.
+LOOKUP_FNS = ("LookupOrderedRowsCS", "LookupOrderedRows", "LookupRowsCS", "LookupRows", "Lookup",
+              "ClaimRowValue", "ClaimRow", "DataExtensionRowCount")
+LOOKUP_TOK = re.compile(
+    r"\b(?P<cond_kw>ELSEIF|IF)\b(?P<cond>.*?)\bTHEN\b"
+    r"|\b(?P<kw>ELSE|ENDIF)\b"
+    r"|\bSET\s+(?P<setvar>@\w+)\s*="
+    r"|\b(?P<fn>" + "|".join(LOOKUP_FNS) + r")\s*\(\s*(?P<arg>'[^']*'|\"[^\"]*\"|@\w+)",
+    re.I | re.S)
+GATE = re.compile(r"_IsTestSend|_messagecontext", re.I)
+
+
+def project_amp_sources(html_path, raw):
+    """The build HTML plus every project-folder content block it pulls in (ProjectAmpscript, ProjectMiddle01, …)."""
+    srcs, base = [("build HTML", raw)], os.path.dirname(os.path.abspath(html_path))
+    for name in dict.fromkeys(re.findall(r"CONTENTBLOCKBYKEY\s*\(\s*CONCAT\s*\(\s*@ProjectFolderID\s*,\s*['\"]_(\w+)['\"]", raw, re.I)):
+        for ext in (".amp", ".htm", ".html"):
+            p = os.path.join(base, name + ext)
+            if os.path.isfile(p):
+                srcs.append((name + ext, open(p, encoding="utf-8", errors="ignore").read()))
+                break
+    return srcs
+
+
+def amp_code(text):
+    blocks = AMP_BLOCK.findall(text) + AMP_INLINE.findall(text)
+    code = "\n".join(blocks) if blocks else (text if "%%" not in text and re.search(r"\bSET\s+@", text, re.I) else "")
+    return re.sub(r"/\*.*?\*/", "", code, flags=re.S)
+
+
+def check_lookups(html_path, raw):
+    d, flags, warns, found = [], [], [], []
+    for src, text in project_amp_sources(html_path, raw):
+        code = amp_code(text)
+        stack, gated_vars, var_vals = [], {}, {}  # frame: {"cond", "gate", "test_branch", "branch"}
+        # blank string contents (same length) so an "if"/"else" inside a message isn't read as a keyword;
+        # values are sliced back out of the original code by span
+        masked = re.sub(r"'[^'\n]*'|\"[^\"\n]*\"", lambda s: s.group(0)[0] + " " * (len(s.group(0)) - 2) + s.group(0)[-1], code)
+        for m in LOOKUP_TOK.finditer(masked):
+            g = lambda name: code[m.start(name):m.end(name)] if m.group(name) is not None else None
+            if m.group("cond_kw"):
+                cond = re.sub(r"\s+", " ", g("cond")).strip()
+                if m.group("cond_kw").upper() == "IF":
+                    test_branch = None
+                    if GATE.search(cond):  # which branch is the test one?
+                        test_branch = 0 if re.search(r"==\s*['\"]?(true|preview)", cond, re.I) else (
+                            1 if re.search(r"!=|==\s*['\"]?false", cond, re.I) else None)
+                    stack.append({"cond": cond, "gate": bool(GATE.search(cond)), "test_branch": test_branch, "branch": 0})
+                elif stack:
+                    stack[-1]["branch"] += 1
+                continue
+            kw = (m.group("kw") or "").upper()
+            if kw == "ELSE" and stack:
+                stack[-1]["branch"] += 1; continue
+            if kw == "ENDIF":
+                stack and stack.pop(); continue
+            gate = next((f for f in reversed(stack) if f["gate"]), None)
+            side = None if not gate or gate["test_branch"] is None else ("test" if gate["branch"] == gate["test_branch"] else "live")
+            if m.group("setvar"):
+                rest = code[m.end():code.find("\n", m.end()) if "\n" in code[m.end():] else len(code)]
+                lit = re.match(r"\s*['\"]([^'\"]*)['\"]", rest)
+                var = m.group("setvar").lower()
+                if lit:
+                    var_vals.setdefault(var, []).append((lit.group(1), side))
+                if gate or GATE.search(rest):  # SET inside the gate, or SET @DE = IIF(_IsTestSend == 'true', …)
+                    gated_vars[var] = gate["cond"] if gate else rest.strip()
+                continue
+            fn, arg = m.group("fn"), g("arg")
+            if arg.startswith("@"):
+                cond = gate["cond"] if gate else gated_vars.get(arg.lower())
+                des = [(v, s) for v, s in var_vals.get(arg.lower(), [])]
+            else:
+                cond, des = (gate["cond"] if gate else None), [(arg.strip("'\""), side)]
+            found.append((src, fn, arg, cond, des))
+
+    if not found:
+        add("lookups", "Lookups: test vs live data extensions", "NA",
+            ["No Lookup / LookupRows / LookupOrderedRows / ClaimRow / DataExtensionRowCount calls in the build or its project content blocks"],
+            [6], ["Lookups pull from test DEs"])
+        return
+    uses_dsn = any(re.search(r"_DataSourceName", amp_code(t), re.I) for _, t in project_amp_sources(html_path, raw))
+    for src, fn, arg, cond, des in found:
+        names = ", ".join(sorted({n for n, _ in des})) or arg
+        where = f"{src}: {fn}({arg}…) → {names}"
+        if not cond:
+            hit = ("live sends read this test DE" if re.search(r"test", names, re.I)
+                   else "test sends and previews read the live DE")
+            flags.append(f"{where} is not gated on _IsTestSend / _messagecontext — {hit}")
+            continue
+        missing = [g for g in ("_IsTestSend", "_messagecontext") if g.lower() not in cond.lower()]
+        if missing:
+            warns.append(f"{where} gated on `{cond}` only — add {missing[0]} "
+                         + ("(Subscriber Preview still reads the live DE)" if missing[0] == "_messagecontext"
+                            else "(test sends run with _messagecontext = 'SEND', so they still read the live DE)"))
+        for n, s in des:
+            if s == "live" and re.search(r"test", n, re.I):
+                flags.append(f"{where}: live-send branch reads {n!r}, which looks like a test DE")
+            elif s == "test" and not re.search(r"test", n, re.I):
+                warns.append(f"{where}: test-send branch reads {n!r} — confirm it is the test DE, not the live one")
+        if not missing and not any(f.startswith(where) for f in flags + warns):
+            d.append(f"OK — {where} gated on `{cond}`")
+    if uses_dsn and flags:
+        flags.insert(0, "Test/live branching uses _DataSourceName, which doesn't tell a test send from a live one — "
+                        "switch to IF _IsTestSend == 'true' OR _messagecontext == 'PREVIEW' THEN <TEST DE> ELSE <live DE> ENDIF")
+    status = "FLAG" if flags else ("WARN" if warns else "PASS")
+    add("lookups", "Lookups: test vs live data extensions", status,
+        flags + warns + d + [f"{len(found)} lookup call(s) found"], [6], ["Lookups pull from test DEs"])
+
+
 
 # ----------------------------------------------------------------------------- main
 def run_check(a):
@@ -1125,6 +1237,7 @@ def run_check(a):
     check_campaign_and_date(links, raw, expected)
     check_ab(raw, expected, a.version or [])
     check_data_spec(a.html, raw, expected)
+    check_lookups(a.html, raw)
     check_copy_vs_figma(blocks, a.figma)
     check_legal(blocks, masked, expected)
     check_header_footer(links, soup, expected)

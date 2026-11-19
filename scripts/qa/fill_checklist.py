@@ -11,7 +11,8 @@ checklist_results.json:
   "project_name": "<SegmentName>",                      (optional → C5 Project Name)
   "developer": "<Jira Assignee>",                      (optional → C6 Developer Name)
   "r1_due_date": "05/Nov/26 | 2026-11-05 | 11/05/2026", (optional → C10 R1 QA due date, the Jira "R1 QA Date")
-  "rows": [ {"match": "Phone numbers underlined", "status": "Pass|Flagged|N/A|", "note": "..."} ]
+  "rows": [ {"match": "Phone numbers underlined", "status": "Pass|Flagged|N/A|", "note": "...",
+             "applies": "Yes|No"} ]                       (applies optional → column E; "No" dims the row)
 }
 The Inbox Monster proofing URLs (C7–C9) are never filled — the developer adds them.
 `match` is a case-insensitive substring of the Check text (column B). Empty status = left for a human;
@@ -111,6 +112,11 @@ def main():
         used.add(r)
         if status:
             ws.cell(r, col, status)
+        applies = item.get("applies")
+        if applies is not None:
+            if applies not in ("Yes", "No"):
+                sys.exit(f"Invalid applies {applies!r} for {item['match']!r} — use Yes / No")
+            ws.cell(r, 5, applies)
         note = item.get("note", "")
         if note:
             c = ws.cell(r, 7, note)
